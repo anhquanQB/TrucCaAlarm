@@ -92,7 +92,7 @@ val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
              )
              watchHandler.postDelayed(this, 2_500L)
          }
-     }        watchRunnable = runner
+             watchRunnable = runner
         watchHandler.post(runner)
     }
 
