@@ -55,8 +55,7 @@ object WatchNotifier {
     fun sendTestWatchNotification(context: Context, selectedKip: String, members: String) {
         val body = buildString {
             append("Nếu đồng hồ Huawei GT 6 Pro vừa rung, kết nối đã thành công!")
-            if (members.isNotBlank()) append("
-Trực cùng: $members")
+            if (members.isNotBlank()) append("\nTrực cùng: $members")
         }
         sendWatchAlert(
             context = context,
