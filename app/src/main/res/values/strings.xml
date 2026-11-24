@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trực Ca &amp; Báo Thức</string>
+    <string name="widget_description">Hiển thị kíp đang trực và đếm ngược giờ ca</string>
+</resources>
