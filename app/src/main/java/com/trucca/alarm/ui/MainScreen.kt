@@ -123,8 +123,7 @@ fun MainScreen(
         ) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.weight(1f),
-                beyondViewportPageCount = 1
+                modifier = Modifier.weight(1f)
             ) { page ->
                 when (page) {
                     0 -> HomeTab(
