@@ -76,20 +76,23 @@ class AlarmService : Service() {
         if (!settings.watchSyncEnabled) return
 
         // Vibrate watch continuously every 10 seconds until user manually dismisses the alarm
-        var sent = 0
-        val runner = object : Runnable {
-            override fun run() {
-                sent++
-                WatchNotifier.sendWatchAlert(
-                    context = this@AlarmService,
-                    title = title,
-                    body = detail,
-                    notificationId = 8800 + (sent % 20)
-                )
-                watchHandler.postDelayed(this, 10_000L)
-            }
-        }
-        watchRunnable = runner
+val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+     var sent = 0
+     val runner = object : Runnable {
+         override fun run() {
+             if (sent > 0) {
+                 nm.cancel(8800 + ((sent - 1) % 5))
+             }
+             sent++
+             WatchNotifier.sendWatchAlert(
+                 context = this@AlarmService,
+                 title = title,
+                 body = detail,
+                 notificationId = 8800 + (sent % 5)
+             )
+             watchHandler.postDelayed(this, 2_500L)
+         }
+     }        watchRunnable = runner
         watchHandler.post(runner)
     }
 
