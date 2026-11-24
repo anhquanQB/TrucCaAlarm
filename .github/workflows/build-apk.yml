@@ -24,12 +24,12 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Build Optimized Release APK
+        run: gradle assembleRelease --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TrucCaAlarm-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: TrucCaAlarm-v2-APK
+          path: app/build/outputs/apk/release/app-release.apk
           retention-days: 30
