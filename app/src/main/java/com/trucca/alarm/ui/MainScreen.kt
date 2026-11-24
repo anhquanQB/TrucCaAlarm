@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +75,7 @@ import com.trucca.alarm.ui.theme.LiquidGlassBackdrop
 import com.trucca.alarm.ui.theme.LocalGlassPalette
 import com.trucca.alarm.ui.theme.paletteFor
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -91,7 +95,8 @@ fun MainScreen(
     onTestAlarm: () -> Unit,
     onTestWatchNotification: () -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
+    val coroutineScope = rememberCoroutineScope()
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var schedulesVersion by remember { mutableIntStateOf(0) }
 
@@ -116,8 +121,12 @@ fun MainScreen(
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            Box(modifier = Modifier.weight(1f)) {
-                when (selectedTab) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+                beyondViewportPageCount = 1
+            ) { page ->
+                when (page) {
                     0 -> HomeTab(
                         now = now,
                         settings = settings,
@@ -157,8 +166,10 @@ fun MainScreen(
             }
 
             FloatingGlassBottomBar(
-                selectedTab = selectedTab,
-                onSelectTab = { selectedTab = it }
+                selectedTab = pagerState.currentPage,
+                onSelectTab = { index ->
+                    coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                }
             )
         }
 
@@ -286,7 +297,7 @@ private fun HomeTab(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${vietnameseWeekday(now.dayOfWeek)}, ${now.format(dateFmt)} • ${now.format(timeFmt)}",
+                        text = "${vietnameseWeekday(now.dayOfWeek)}, ${now.format(dateFmt)} ${LunarCalendarUtil.fromSolar(now.toLocalDate()).fullTag()} • ${now.format(timeFmt)}",
                         color = p.mutedText,
                         fontSize = 13.sp
                     )
@@ -400,12 +411,18 @@ private fun ActiveShiftHeroCard(
 ) {
     val p = LocalGlassPalette.current
     val shape = RoundedCornerShape(28.dp)
-    val baseGradient = Brush.linearGradient(colors = listOf(p.heroStart, p.heroMid, p.heroEnd))
+    val baseGradient = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.20f),
+            p.reflectionPrimary.copy(alpha = 0.10f),
+            p.reflectionSecondary.copy(alpha = 0.14f)
+        )
+    )
     val glassSheen = Brush.linearGradient(
-        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent, Color.White.copy(alpha = 0.06f))
+        colors = listOf(Color.White.copy(alpha = 0.26f), Color.Transparent, p.reflectionPrimary.copy(alpha = 0.12f))
     )
     val rimBorder = Brush.linearGradient(
-        colors = listOf(Color.White.copy(alpha = 0.48f), Color.White.copy(alpha = 0.10f), p.accent.copy(alpha = 0.35f))
+        colors = listOf(Color.White.copy(alpha = 0.88f), p.reflectionPrimary.copy(alpha = 0.55f), p.reflectionSecondary.copy(alpha = 0.72f))
     )
 
     Box(
@@ -560,7 +577,7 @@ private fun MyShiftCountdownCard(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "${nextShift.shiftType.displayName} • ${vietnameseWeekday(nextShift.shiftDate.dayOfWeek)} ${nextShift.shiftDate.format(dateFmt)} (${settings.shiftTimeConfig.formattedRange(nextShift.shiftType)})",
+                    text = "${nextShift.shiftType.displayName} • ${vietnameseWeekday(nextShift.shiftDate.dayOfWeek)} ${nextShift.shiftDate.format(dateFmt)} ${LunarCalendarUtil.fromSolar(nextShift.shiftDate).fullTag()} (${settings.shiftTimeConfig.formattedRange(nextShift.shiftType)})",
                     color = p.softWhite,
                     fontSize = 14.sp
                 )
@@ -600,7 +617,7 @@ private fun UpcomingShiftRow(shift: UpcomingShiftInfo, settings: AppSettings) {
         ) {
             Column {
                 Text(
-                    text = "${vietnameseWeekday(shift.shiftDate.dayOfWeek)}, ${shift.shiftDate.format(dateFmt)}",
+                    text = "${vietnameseWeekday(shift.shiftDate.dayOfWeek)}, ${shift.shiftDate.format(dateFmt)} ${LunarCalendarUtil.fromSolar(shift.shiftDate).fullTag()}",
                     color = p.softWhite,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
@@ -723,9 +740,9 @@ private fun CalendarTab(
                                 fontSize = 15.sp
                             )
                             Text(
-                                text = vietnameseShortWeekday(date.dayOfWeek),
+                                text = "${vietnameseShortWeekday(date.dayOfWeek)} • ${LunarCalendarUtil.fromSolar(date).shortLabel()}",
                                 color = p.mutedText,
-                                fontSize = 11.sp
+                                fontSize = 10.sp
                             )
                         }
                         ShiftCellBadge(sched.morningKip, sched.morningKip == settings.selectedKip, Modifier.weight(1f))
@@ -964,9 +981,9 @@ private fun ImportTab(
                         onClick = { onGenerateCycle(targetMonth.year, targetMonth.monthValue, cycleOffset) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                        colors = ButtonDefaults.buttonColors(containerColor = p.accent, contentColor = Color(0xFF07101F))
                     ) {
-                        Text("Tạo lịch tháng %02d/%04d".format(targetMonth.monthValue, targetMonth.year), color = Color.White)
+                        Text("Tạo lịch tháng %02d/%04d".format(targetMonth.monthValue, targetMonth.year))
                     }
                 }
             }
@@ -1015,7 +1032,7 @@ private fun SettingsTab(
         item {
             GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Màu sắc Liquid Glass", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Màu ánh phản chiếu (Liquid Glass)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text("Chạm để đổi màu toàn bộ giao diện ngay lập tức.", color = p.mutedText, fontSize = 12.sp)
 
                     val themes = GlassThemeId.entries
@@ -1145,7 +1162,7 @@ private fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Đẩy thông báo rung + tên thành viên sang đồng hồ", color = p.softWhite, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Rung liên tục mỗi 10 giây đến khi tắt báo thức", color = p.softWhite, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text("Qua Huawei Sức khỏe → Thông báo → bật 'Trực Ca & Báo Thức'", color = p.mutedText, fontSize = 12.sp)
                         }
                         Switch(
@@ -1160,14 +1177,14 @@ private fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Số nhịp rung lặp (cách 20 giây):", color = p.softWhite, fontSize = 13.sp)
+                        Text("Số nhịp rung đánh thức (cách 10 giây):", color = p.softWhite, fontSize = 13.sp)
                         OutlinedButton(onClick = {
                             watchRepeatCount = (watchRepeatCount - 1).coerceAtLeast(1)
                             onSave(buildUpdatedSettings())
                         }) { Text("-") }
                         Text("$watchRepeatCount", color = p.highlightYellow, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         OutlinedButton(onClick = {
-                            watchRepeatCount = (watchRepeatCount + 1).coerceAtMost(5)
+                            watchRepeatCount = (watchRepeatCount + 1).coerceAtMost(12)
                             onSave(buildUpdatedSettings())
                         }) { Text("+") }
                     }

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import com.trucca.alarm.MainActivity
 import com.trucca.alarm.data.ScheduleRepository
+import com.trucca.alarm.model.LunarCalendarUtil
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -39,18 +40,13 @@ object ShiftAlarmScheduler {
                     .toInstant()
                     .toEpochMilli()
 
-                val daySchedule = allSchedules[shift.shiftDate.toString()]
-                val members = daySchedule?.customMembersFor(shift.shiftType)
-                    ?.ifBlank { settings.kipMembers[shift.kip].orEmpty() }
-                    ?: settings.kipMembers[shift.kip].orEmpty()
 
-                val title = "Sắp vào ${shift.shiftType.displayName} • Kíp ${shift.kip}"
-                val detail = buildString {
-                    append("Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})")
-                    if (members.isNotBlank()) {
-                        append("\nTrực cùng: $members")
-                    }
-                }
+
+                val range = settings.shiftTimeConfig.formattedRange(shift.shiftType)
+                val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
+                val title = "${shift.shiftType.displayName} • Kíp ${shift.kip}"
+                val lunarTag = LunarCalendarUtil.fromSolar(shift.shiftDate).compactTag()
+                val detail = "$range • ${shift.shiftDate.format(dateFmt)} $lunarTag"
 
                 scheduleExact(
                     context = context,
@@ -69,24 +65,37 @@ object ShiftAlarmScheduler {
     fun scheduleTestAlarm(context: Context, delaySeconds: Long = 5) {
         val repo = ScheduleRepository(context)
         val settings = repo.getSettings()
-        val members = settings.kipMembers[settings.selectedKip].orEmpty()
+        val nextShift = repo.getUpcomingShiftsForKip(settings.selectedKip, LocalDateTime.now(), 1).firstOrNull()
+        val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+        val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
+
+        val shiftTitle = if (nextShift != null) {
+            "${nextShift.shiftType.displayName} • Kíp ${settings.selectedKip}"
+        } else {
+            "Ca Sáng • Kíp ${settings.selectedKip}"
+        }
+
+        val detail = if (nextShift != null) {
+            val range = settings.shiftTimeConfig.formattedRange(nextShift.shiftType)
+            val lunarTag = LunarCalendarUtil.fromSolar(nextShift.shiftDate).compactTag()
+            "$range • ${nextShift.shiftDate.format(dateFmt)} $lunarTag"
+        } else {
+            "07:00 – 15:00"
+        }
+
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAtMillis = System.currentTimeMillis() + delaySeconds * 1000L
-        val detail = buildString {
-            append("Chuông điện thoại & đồng hồ Huawei đang hoạt động.")
-            if (members.isNotBlank()) append("\nTrực cùng: $members")
-        }
         scheduleExact(
             context = context,
             alarmManager = alarmManager,
             requestCode = TEST_REQUEST_CODE,
             triggerAtMillis = triggerAtMillis,
-            title = "Báo thức thử • Kíp ${settings.selectedKip}",
+            title = shiftTitle,
             detail = detail
         )
     }
 
-    fun scheduleSnooze(context: Context, title: String, detail: String, minutes: Long = 5) {
+    fun scheduleSnooze(context: Context, title: String, detail: String, stage: Int, minutes: Long = 5) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAtMillis = System.currentTimeMillis() + minutes * 60_000L
         scheduleExact(
@@ -94,8 +103,23 @@ object ShiftAlarmScheduler {
             alarmManager = alarmManager,
             requestCode = SNOOZE_REQUEST_CODE,
             triggerAtMillis = triggerAtMillis,
-            title = "$title (Báo lại)",
-            detail = detail
+            title = title,
+            detail = detail,
+            stage = stage
+        )
+    }
+
+    fun scheduleFollowUpStage(context: Context, title: String, detail: String, nextStage: Int, delayMinutes: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 60_000L
+        scheduleExact(
+            context = context,
+            alarmManager = alarmManager,
+            requestCode = 9990 + nextStage,
+            triggerAtMillis = triggerAtMillis,
+            title = title,
+            detail = detail,
+            stage = nextStage
         )
     }
 
@@ -118,11 +142,13 @@ object ShiftAlarmScheduler {
         requestCode: Int,
         triggerAtMillis: Long,
         title: String,
-        detail: String
+        detail: String,
+        stage: Int = 1
     ) {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra(AlarmService.EXTRA_TITLE, title)
             putExtra(AlarmService.EXTRA_DETAIL, detail)
+            putExtra(AlarmService.EXTRA_STAGE, stage)
         }
         val operation = PendingIntent.getBroadcast(
             context,

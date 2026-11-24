@@ -50,14 +50,25 @@ class AlarmActivity : ComponentActivity() {
 
         val title = intent.getStringExtra(AlarmService.EXTRA_TITLE) ?: "Sắp vào ca trực!"
         val detail = intent.getStringExtra(AlarmService.EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
+        val stage = intent.getIntExtra(AlarmService.EXTRA_STAGE, 1)
 
         setContent {
             AlarmRingScreen(
                 title = title,
                 detail = detail,
-                onDismiss = {
+                stage = stage,
+                onDismissStage = {
                     startService(Intent(this, AlarmService::class.java).apply {
                         action = AlarmService.ACTION_STOP
+                        putExtra(AlarmService.EXTRA_TITLE, title)
+                        putExtra(AlarmService.EXTRA_DETAIL, detail)
+                        putExtra(AlarmService.EXTRA_STAGE, stage)
+                    })
+                    finish()
+                },
+                onDismissAll = {
+                    startService(Intent(this, AlarmService::class.java).apply {
+                        action = AlarmService.ACTION_DISMISS_ALL
                     })
                     finish()
                 },
@@ -66,6 +77,7 @@ class AlarmActivity : ComponentActivity() {
                         action = AlarmService.ACTION_SNOOZE
                         putExtra(AlarmService.EXTRA_TITLE, title)
                         putExtra(AlarmService.EXTRA_DETAIL, detail)
+                        putExtra(AlarmService.EXTRA_STAGE, stage)
                     })
                     finish()
                 }
@@ -78,7 +90,9 @@ class AlarmActivity : ComponentActivity() {
 private fun AlarmRingScreen(
     title: String,
     detail: String,
-    onDismiss: () -> Unit,
+    stage: Int,
+    onDismissStage: () -> Unit,
+    onDismissAll: () -> Unit,
     onSnooze: () -> Unit
 ) {
     Box(
@@ -103,8 +117,8 @@ private fun AlarmRingScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "BÁO THỨC TRỰC CA",
-                color = Color(0xFFA8C7FA),
+                text = "BÁO THỨC TRỰC CA • ĐỢT $stage / 3",
+                color = Color(0xFF7DD3FC),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
@@ -126,25 +140,42 @@ private fun AlarmRingScreen(
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(36.dp))
+            val nextStageNote = when (stage) {
+                1 -> "Tắt đợt 1 (tự nhắc lại đợt 2 sau 10 phút)"
+                2 -> "Tắt đợt 2 (tự nhắc lại đợt 3 sau 5 phút)"
+                else -> "Tắt báo thức (đợt cuối 3/3)"
+            }
             Button(
-                onClick = onDismiss,
+                onClick = onDismissStage,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(58.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
             ) {
-                Text("TẮT BÁO THỨC", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(nextStageNote, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            if (stage < 3) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onDismissAll,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text("Đã tỉnh hẳn (Hủy các đợt sau)", fontSize = 14.sp, color = Color(0xFF7DD3FC))
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
             OutlinedButton(
                 onClick = onSnooze,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(48.dp),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text("Báo lại sau 5 phút", fontSize = 15.sp, color = Color.White)
+                Text("Báo lại sau 5 phút", fontSize = 14.sp, color = Color.White)
             }
         }
     }

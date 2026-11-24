@@ -11,8 +11,8 @@ android {
         applicationId = "com.trucca.alarm"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "2.1.0"
+        versionCode = 7
+        versionName = "2.4.0"
 
         vectorDrawables {
             useSupportLibrary = true

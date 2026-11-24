@@ -5,18 +5,18 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 
 enum class ShiftType(val displayName: String, val shortName: String) {
-    MORNING("Ca sáng", "Sáng"),
-    AFTERNOON("Ca chiều", "Chiều"),
-    NIGHT("Ca đêm", "Đêm")
+    MORNING("Ca Sáng", "Sáng"),
+    AFTERNOON("Ca Chiều", "Chiều"),
+    NIGHT("Ca Khuya", "Khuya")
 }
 
 enum class GlassThemeId(val label: String) {
-    OCEAN("Xanh Đại Dương"),
-    EMERALD("Ngọc Lục Bảo"),
-    VIOLET("Tím Tinh Vân"),
-    AMBER("Hổ Phách"),
-    CRIMSON("Đỏ Ruby"),
-    TITANIUM("Xám Titan")
+    OCEAN("Ánh Xanh Dương"),
+    EMERALD("Ánh Xanh Ngọc"),
+    VIOLET("Ánh Tím"),
+    AMBER("Ánh Vàng"),
+    CRIMSON("Ánh Hồng Đỏ"),
+    TITANIUM("Pha Lê Trắng")
 }
 
 data class DaySchedule(
@@ -80,7 +80,7 @@ data class AppSettings(
     val afternoonAlarmBeforeMin: Int = 60,
     val nightAlarmBeforeMin: Int = 60,
     val watchSyncEnabled: Boolean = true,
-    val watchRepeatCount: Int = 3,
+    val watchRepeatCount: Int = 6,
     val shiftTimeConfig: ShiftTimeConfig = ShiftTimeConfig(),
     val kipMembers: Map<String, String> = mapOf(
         "A" to "Nguyễn Anh Quân, Trần Xuân An, Nguyễn Văn Tuấn",

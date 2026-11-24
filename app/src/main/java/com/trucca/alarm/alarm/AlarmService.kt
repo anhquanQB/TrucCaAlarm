@@ -26,28 +26,45 @@ class AlarmService : Service() {
     private var vibrator: Vibrator? = null
     private val watchHandler = Handler(Looper.getMainLooper())
     private var watchRunnable: Runnable? = null
+    private var activeTitle: String = "Sắp vào ca trực!"
+    private var activeDetail: String = "Chuẩn bị đi làm."
+    private var activeStage: Int = 1
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                val stageToFinish = intent.getIntExtra(EXTRA_STAGE, activeStage)
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
+                val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
+                when (stageToFinish) {
+                    1 -> ShiftAlarmScheduler.scheduleFollowUpStage(this, title, detail, nextStage = 2, delayMinutes = 10)
+                    2 -> ShiftAlarmScheduler.scheduleFollowUpStage(this, title, detail, nextStage = 3, delayMinutes = 5)
+                }
+                stopAlarmAndSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_DISMISS_ALL -> {
                 stopAlarmAndSelf()
                 return START_NOT_STICKY
             }
             ACTION_SNOOZE -> {
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: "Báo thức trực ca"
-                val detail = intent.getStringExtra(EXTRA_DETAIL) ?: ""
-                ShiftAlarmScheduler.scheduleSnooze(this, title, detail, 5)
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
+                val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
+                val stage = intent.getIntExtra(EXTRA_STAGE, activeStage)
+                ShiftAlarmScheduler.scheduleSnooze(this, title, detail, stage, 5)
                 stopAlarmAndSelf()
                 return START_NOT_STICKY
             }
             else -> {
-                val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Sắp vào ca trực!"
-                val detail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
-                startAlarmNotification(title, detail)
+                activeTitle = intent?.getStringExtra(EXTRA_TITLE) ?: "Sắp vào ca trực!"
+                activeDetail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
+                activeStage = intent?.getIntExtra(EXTRA_STAGE, 1) ?: 1
+                val watchBody = "$activeDetail • [Đợt $activeStage/3]"
+                startAlarmNotification(activeTitle, watchBody, activeStage)
                 startSoundAndVibration()
-                startWatchAlertBursts(title, detail)
+                startWatchAlertBursts(activeTitle, watchBody)
             }
         }
         return START_STICKY
@@ -58,30 +75,25 @@ class AlarmService : Service() {
         val settings = ScheduleRepository(this).getSettings()
         if (!settings.watchSyncEnabled) return
 
-        val totalRepeats = settings.watchRepeatCount.coerceIn(1, 5)
+        // Vibrate watch continuously every 10 seconds until user manually dismisses the alarm
         var sent = 0
-
         val runner = object : Runnable {
             override fun run() {
-                if (sent >= totalRepeats) return
                 sent++
-                val suffix = if (totalRepeats > 1) " (Nhắc $sent/$totalRepeats)" else ""
                 WatchNotifier.sendWatchAlert(
                     context = this@AlarmService,
-                    title = "$title$suffix",
+                    title = title,
                     body = detail,
-                    notificationId = 8800 + sent
+                    notificationId = 8800 + (sent % 20)
                 )
-                if (sent < totalRepeats) {
-                    watchHandler.postDelayed(this, 20_000L)
-                }
+                watchHandler.postDelayed(this, 10_000L)
             }
         }
         watchRunnable = runner
         watchHandler.post(runner)
     }
 
-    private fun startAlarmNotification(title: String, detail: String) {
+    private fun startAlarmNotification(title: String, detail: String, stage: Int) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -96,8 +108,9 @@ class AlarmService : Service() {
 
         val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_TITLE, title)
-            putExtra(EXTRA_DETAIL, detail)
+            putExtra(EXTRA_TITLE, activeTitle)
+            putExtra(EXTRA_DETAIL, activeDetail)
+            putExtra(EXTRA_STAGE, stage)
         }
         val fullScreenPending = PendingIntent.getActivity(
             this,
@@ -208,8 +221,10 @@ class AlarmService : Service() {
         const val NOTIFICATION_ID = 7701
         const val ACTION_START = "com.trucca.alarm.START"
         const val ACTION_STOP = "com.trucca.alarm.STOP"
+        const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
         const val ACTION_SNOOZE = "com.trucca.alarm.SNOOZE"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_DETAIL = "extra_detail"
+        const val EXTRA_STAGE = "extra_stage"
     }
 }
