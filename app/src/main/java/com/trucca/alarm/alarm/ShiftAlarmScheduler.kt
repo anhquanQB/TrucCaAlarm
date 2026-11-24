@@ -38,8 +38,17 @@ object ShiftAlarmScheduler {
                     .toInstant()
                     .toEpochMilli()
 
-                val title = "Sắp vào ${shift.shiftType.displayName} • Kíp ${shift.kip}"
-                val detail = "Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})"
+                val daySchedule = repo.getAllSchedules()[shift.shiftDate.toString()]
+             val members = daySchedule?.customMembersFor(shift.shiftType)
+                 ?.ifBlank { settings.kipMembers[shift.kip].orEmpty() }
+                 ?: settings.kipMembers[shift.kip].orEmpty()
+             val title = "Sắp vào ${shift.shiftType.displayName} • Kíp ${shift.kip}"
+             val detail = buildString {
+                 append("Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})")
+                 if (members.isNotBlank()) {
+                     append("\nTrực cùng: $members")
+                 }
+             }
 
                 scheduleExact(
                     context = context,
