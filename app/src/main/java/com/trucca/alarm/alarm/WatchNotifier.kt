@@ -33,7 +33,13 @@ object WatchNotifier {
         nm.createNotificationChannel(channel)
     }
 
-    fun sendWatchAlert(context: Context, title: String, body: String, notificationId: Int) {
+    fun sendWatchAlert(
+        context: Context,
+        title: String,
+        body: String,
+        notificationId: Int,
+        stopPendingIntent: PendingIntent? = null
+    ) {
         ensureChannel(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val pendingIntent = PendingIntent.getActivity(
@@ -43,21 +49,24 @@ object WatchNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, WATCH_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, WATCH_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)
             .setOngoing(false)
             .setOnlyAlertOnce(false)
             .setContentIntent(pendingIntent)
-            .build()
 
-        nm.notify(notificationId, notification)
+        if (stopPendingIntent != null) {
+            builder.addAction(0, "Tắt báo thức", stopPendingIntent)
+        }
+
+        nm.notify(notificationId, builder.build())
     }
 
     fun sendTestWatchNotification(context: Context, selectedKip: String, members: String) {
