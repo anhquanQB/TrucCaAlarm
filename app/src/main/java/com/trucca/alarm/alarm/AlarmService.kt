@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -24,6 +25,7 @@ class AlarmService : Service() {
 
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private val watchHandler = Handler(Looper.getMainLooper())
     private var watchRunnable: Runnable? = null
     private var activeTitle: String = "Sắp vào ca trực!"
@@ -62,41 +64,85 @@ class AlarmService : Service() {
                 activeDetail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
                 activeStage = intent?.getIntExtra(EXTRA_STAGE, 1) ?: 1
                 val watchBody = "$activeDetail • [Đợt $activeStage/3]"
-                startAlarmNotification(activeTitle, watchBody, activeStage)
+                val stopPending = buildStopStagePendingIntent()
+                startAlarmNotification(activeTitle, watchBody, activeStage, stopPending)
                 startSoundAndVibration()
-                startWatchAlertBursts(activeTitle, watchBody)
+                startWatchAlertBursts(activeTitle, watchBody, stopPending)
             }
         }
         return START_STICKY
     }
 
-    private fun startWatchAlertBursts(title: String, detail: String) {
+    private fun buildStopStagePendingIntent(): PendingIntent {
+        val stopIntent = Intent(this, AlarmService::class.java).apply {
+            action = ACTION_STOP
+            putExtra(EXTRA_TITLE, activeTitle)
+            putExtra(EXTRA_DETAIL, activeDetail)
+            putExtra(EXTRA_STAGE, activeStage)
+        }
+        return PendingIntent.getService(
+            this,
+            102,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun clearWatchNotifications() {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        for (id in 8800..8835) {
+            nm.cancel(id)
+        }
+    }
+
+    private fun startWatchAlertBursts(title: String, detail: String, stopPending: PendingIntent) {
         watchRunnable?.let { watchHandler.removeCallbacks(it) }
         val settings = ScheduleRepository(this).getSettings()
         if (!settings.watchSyncEnabled) return
+
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION")
+                wakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "TrucCaAlarm::WatchAlarmLock"
+                )
+            }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(10 * 60 * 1000L)
+            }
+        } catch (_: Exception) {
+        }
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         var sent = 0
         val runner = object : Runnable {
             override fun run() {
                 if (sent > 0) {
-                    nm.cancel(8800 + ((sent - 1) % 5))
+                    nm.cancel(8800 + ((sent - 1) % 30))
                 }
                 sent++
                 WatchNotifier.sendWatchAlert(
                     context = this@AlarmService,
-                    title = title,
+                    title = "$title (#$sent)",
                     body = detail,
-                    notificationId = 8800 + (sent % 5)
+                    notificationId = 8800 + (sent % 30),
+                    stopPendingIntent = stopPending
                 )
-                watchHandler.postDelayed(this, 2_500L)
+                watchHandler.postDelayed(this, 3_000L)
             }
         }
         watchRunnable = runner
         watchHandler.post(runner)
     }
 
-    private fun startAlarmNotification(title: String, detail: String, stage: Int) {
+    private fun startAlarmNotification(
+        title: String,
+        detail: String,
+        stage: Int,
+        stopPending: PendingIntent
+    ) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -106,11 +152,14 @@ class AlarmService : Service() {
             description = "Kênh thông báo chuông báo thức lịch trực ca"
             setSound(null, null)
             enableVibration(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(channel)
 
         val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_TITLE, activeTitle)
             putExtra(EXTRA_DETAIL, activeDetail)
             putExtra(EXTRA_STAGE, stage)
@@ -122,14 +171,6 @@ class AlarmService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val stopIntent = Intent(this, AlarmService::class.java).apply { action = ACTION_STOP }
-        val stopPending = PendingIntent.getService(
-            this,
-            102,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)
@@ -137,6 +178,7 @@ class AlarmService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setFullScreenIntent(fullScreenPending, true)
             .addAction(0, "Tắt báo thức", stopPending)
@@ -194,6 +236,7 @@ class AlarmService : Service() {
     private fun stopAlarmAndSelf() {
         watchRunnable?.let { watchHandler.removeCallbacks(it) }
         watchRunnable = null
+        clearWatchNotifications()
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()
@@ -204,16 +247,25 @@ class AlarmService : Service() {
             vibrator?.cancel()
         } catch (_: Exception) {
         }
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         watchRunnable?.let { watchHandler.removeCallbacks(it) }
+        clearWatchNotifications()
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()
             vibrator?.cancel()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (_: Exception) {
         }
         super.onDestroy()
