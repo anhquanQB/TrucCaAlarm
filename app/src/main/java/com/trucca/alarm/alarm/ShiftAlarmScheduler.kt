@@ -91,7 +91,8 @@ object ShiftAlarmScheduler {
             requestCode = TEST_REQUEST_CODE,
             triggerAtMillis = triggerAtMillis,
             title = shiftTitle,
-            detail = detail
+            detail = detail,
+            stage = 3
         )
     }
 
