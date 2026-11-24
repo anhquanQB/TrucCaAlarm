@@ -48,8 +48,7 @@ object ShiftAlarmScheduler {
                 val detail = buildString {
                     append("Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})")
                     if (members.isNotBlank()) {
-                        append("
-Trực cùng: $members")
+                        append("\nTrực cùng: $members")
                     }
                 }
 
@@ -75,8 +74,7 @@ Trực cùng: $members")
         val triggerAtMillis = System.currentTimeMillis() + delaySeconds * 1000L
         val detail = buildString {
             append("Chuông điện thoại & đồng hồ Huawei đang hoạt động.")
-            if (members.isNotBlank()) append("
-Trực cùng: $members")
+            if (members.isNotBlank()) append("\nTrực cùng: $members")
         }
         scheduleExact(
             context = context,
