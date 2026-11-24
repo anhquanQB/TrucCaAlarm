@@ -1,23 +1,10 @@
-# Trực Ca & Báo Thức (Android APK — v1.1)
+# Trực Ca & Báo Thức v2.0 (Liquid Glass + Tối ưu nhẹ máy + Cài đè không mất dữ liệu)
 
-Ứng dụng Android theo dõi lịch trực 5 kíp (A, B, C, D, E) — 3 ca (Sáng `07:00–15:00`, Chiều `15:00–23:00`, Đêm `23:00–07:00`), hiển thị thẻ **ĐANG TRỰC** gradient xanh kèm đếm ngược thời gian thực, Widget màn hình chính, nhập tên người trực theo Kíp hoặc riêng từng ca, báo thức hệ thống và đẩy thông báo rung sang đồng hồ **Huawei Watch GT 6 Pro** qua **Huawei Sức khỏe**.
+## Điểm mới ở bản v2.0
+- **Giao diện Liquid Glass + 6 bảng màu tùy biến:** Nền sáng dịu đa tầng, thẻ kính bán trong suốt có viền phản chiếu ánh sáng, thanh điều hướng nổi dạng viên thuốc và 6 chủ đề màu đổi tức thì trong tab **Cài đặt**.
+- **Siêu gọn & tối ưu bộ nhớ:** Lưu cache dữ liệu lịch trong RAM (không đọc lại bộ nhớ mỗi giây), gỡ gói icon mở rộng nặng máy, bật nén mã & tài nguyên R8 (`assembleRelease`) giúp file `.apk` nhẹ nhất có thể.
+- **Khóa ký cố định (`app/trucca-release.jks`):** Từ bản v2.0 trở đi, mỗi lần bạn sửa code và build lại bản mới trên GitHub Actions, bạn chỉ cần **bấm cài đè (Cập nhật)** trực tiếp lên điện thoại mà **không cần gỡ bản cũ và không mất lịch trực đã lưu**.
+- **Nạp sẵn đủ tên 5 Kíp mục 4 (TC TĐĐK)** từ Phụ lục Tháng 11/2026 và **hiện kèm tên thành viên trực cùng ngay trên thông báo đồng hồ Huawei Watch GT 6 Pro**.
 
-## Tính năng chính
-- **Dữ liệu sẵn có:** Đã nạp sẵn lịch trực **Tháng 11/2026** và **Tháng 12/2026** (tô vàng kíp bạn chọn, mặc định Kíp A).
-- **Quản lý nhân sự linh hoạt 2 cấp:**
-  - Nhập danh sách người đi ca mặc định cho từng **Kíp (A–E)** trong tab **Báo thức**.
-  - Chạm vào bất kỳ ngày nào trong tab **Lịch tháng** để nhập tên người đi ca **riêng cho từng Ca sáng / Ca chiều / Ca đêm** của ngày đó (khi có người đổi ca hoặc trực dự phòng).
-- **Liên kết đồng hồ Huawei Watch GT 6 Pro (qua Huawei Sức khỏe):**
-  - Tự phát kênh thông báo chuẩn (`Nhắc ca đồng hồ Huawei Watch`, không dùng chế độ nền ẩn nên không bị Huawei Sức khỏe lọc bỏ) lặp lại 1–5 nhịp (cách nhau 20 giây) khi báo thức kêu cho đến khi bạn tắt báo thức.
-  - Có nút **Gửi thông báo thử sang đồng hồ** trong tab **Báo thức** để kiểm tra ngay.
-- **Nhập lịch linh hoạt:** Hỗ trợ **Excel (`.xlsx`)**, **Word (`.docx`)**, **CSV**, **ảnh chụp bảng lịch (OCR)** và **tạo nhanh theo chu kỳ 10 ngày**.
-
-## Cách bật thông báo trên đồng hồ Huawei Watch GT 6 Pro
-1. Cài đặt file `app-debug.apk` lên điện thoại và cấp quyền **Thông báo** khi ứng dụng hỏi.
-2. Mở ứng dụng **Huawei Sức khỏe (Huawei Health)** → vào mục **Thiết bị** → chọn **Huawei Watch GT 6 Pro** → **Thông báo** → bật công tắc cho **Trực Ca & Báo Thức**.
-3. Mở lại ứng dụng **Trực Ca & Báo Thức** → tab **Báo thức** → bấm **Gửi thông báo thử sang đồng hồ** để kiểm tra đồng hồ rung.
-
-## Cách tự xuất file `.apk` miễn phí bằng GitHub Actions
-1. Giải nén file `TrucCaAlarm-Android.zip`.
-2. Tạo một kho lưu trữ (Repository) trên GitHub và tải toàn bộ thư mục bên trong `TrucCaAlarm` lên (bao gồm `.github/workflows/build-apk.yml`).
-3. Vào tab **Actions** → chạy workflow **Build Android APK** → chờ 2–4 phút và tải file `TrucCaAlarm-APK` ở mục **Artifacts**.
+## Lưu ý khi nâng cấp từ v1 lên v2.0 (chỉ cần làm 1 lần duy nhất)
+- Do bản v1 dùng chữ ký debug tạm, bạn **gỡ bản v1 cũ trên điện thoại** trước khi cài `app-release.apk` của bản v2.0. Từ v2.0 trở đi (v2.1, v2.2...), mọi bản cập nhật sau đều **cài đè trực tiếp** mà không cần gỡ nữa.

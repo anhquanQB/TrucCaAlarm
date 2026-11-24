@@ -7,6 +7,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -84,58 +86,65 @@ private fun AlarmRingScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1D4ED8), Color(0xFF0A1D42), Color(0xFF060B14))
+                    colors = listOf(Color(0xFF1D4ED8), Color(0xFF0A1D42), Color(0xFF050811))
                 )
             )
-            .padding(28.dp),
+            .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(30.dp))
+                .background(Color.White.copy(alpha = 0.10f))
+                .border(1.2.dp, Color.White.copy(alpha = 0.30f), RoundedCornerShape(30.dp))
+                .padding(26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = "BÁO THỨC TRỰC CA",
                 color = Color(0xFFA8C7FA),
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = title,
                 color = Color.White,
-                fontSize = 28.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = detail,
-                color = Color(0xFFD6E4FF),
-                fontSize = 17.sp,
+                color = Color(0xFFE2EEFF),
+                fontSize = 16.sp,
+                lineHeight = 23.sp,
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(36.dp))
             Button(
                 onClick = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(58.dp),
+                    .height(56.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
             ) {
-                Text("TẮT BÁO THỨC", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("TẮT BÁO THỨC", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             OutlinedButton(
                 onClick = onSnooze,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(50.dp),
                 shape = RoundedCornerShape(18.dp)
             ) {
-                Text("Báo lại sau 5 phút", fontSize = 16.sp, color = Color.White)
+                Text("Báo lại sau 5 phút", fontSize = 15.sp, color = Color.White)
             }
         }
     }

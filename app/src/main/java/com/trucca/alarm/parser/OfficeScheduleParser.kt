@@ -76,27 +76,18 @@ object OfficeScheduleParser {
         }
 
         if (morningRow == null || afternoonRow == null || nightRow == null) {
-            return ParseResult(
-                emptyList(),
-                "Chưa tìm thấy đủ 3 hàng 'Sáng', 'Chiều', 'Đêm' trong tệp."
-            )
+            return ParseResult(emptyList(), "Chưa tìm thấy đủ 3 hàng 'Sáng', 'Chiều', 'Đêm' trong tệp.")
         }
 
         val ym = YearMonth.of(targetYear, targetMonth)
         val maxDay = ym.lengthOfMonth()
         val result = mutableListOf<DaySchedule>()
 
-        val colCount = maxOf(
-            dayRow?.size ?: 0,
-            morningRow.size,
-            afternoonRow.size,
-            nightRow.size
-        )
+        val colCount = maxOf(dayRow?.size ?: 0, morningRow.size, afternoonRow.size, nightRow.size)
 
         var sequentialDay = 1
         for (col in 1 until colCount) {
-            val dayNum = dayRow?.getOrNull(col)?.filter { it.isDigit() }?.toIntOrNull()
-                ?: sequentialDay
+            val dayNum = dayRow?.getOrNull(col)?.filter { it.isDigit() }?.toIntOrNull() ?: sequentialDay
             if (dayNum in 1..maxDay) {
                 val mKip = normalizeKip(morningRow.getOrNull(col))
                 val aKip = normalizeKip(afternoonRow.getOrNull(col))
@@ -124,31 +115,39 @@ object OfficeScheduleParser {
     fun parseOcrText(rawText: String, targetYear: Int, targetMonth: Int): ParseResult {
         val lines = rawText.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val rows = mutableListOf<List<String>>()
+        val kipLineCandidates = mutableListOf<List<String>>()
+
         for (line in lines) {
             val lower = line.lowercase()
+            val tokens = Regex("\b[A-Ea-e]\b").findAll(line).map { it.value.uppercase() }.toList()
             val label = when {
                 lower.startsWith("sáng") || lower.startsWith("sang") -> "Sáng"
                 lower.startsWith("chiều") || lower.startsWith("chieu") -> "Chiều"
                 lower.startsWith("đêm") || lower.startsWith("dem") -> "Đêm"
                 else -> null
             }
-            if (label != null) {
-                val tokens = Regex("\b[A-Ea-e]\b")
-                    .findAll(line)
-                    .map { it.value.uppercase() }
-                    .toList()
-                if (tokens.isNotEmpty()) {
-                    rows.add(listOf(label) + tokens)
-                }
+            if (label != null && tokens.isNotEmpty()) {
+                rows.add(listOf(label) + tokens)
+            } else if (tokens.size >= 10) {
+                kipLineCandidates.add(tokens)
             }
+        }
+
+        // Fallback when OCR separates row headers ("Sáng/Chiều/Đêm") from the 30-day Kíp rows
+        if (rows.size < 3 && kipLineCandidates.size >= 3) {
+            val fallbackRows = listOf(
+                listOf("Sáng") + kipLineCandidates[0],
+                listOf("Chiều") + kipLineCandidates[1],
+                listOf("Đêm") + kipLineCandidates[2]
+            )
+            return parseRowsMatrix(fallbackRows, targetYear, targetMonth)
         }
         return parseRowsMatrix(rows, targetYear, targetMonth)
     }
 
     private fun normalizeKip(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        val clean = raw.trim().uppercase()
-        return clean.replace("KÍP", "").replace("KIP", "").trim()
+        return raw.trim().uppercase().replace("KÍP", "").replace("KIP", "").trim()
     }
 
     private fun parseCsv(input: InputStream, targetYear: Int, targetMonth: Int): ParseResult {
@@ -188,27 +187,21 @@ object OfficeScheduleParser {
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "w:tr" -> currentRow = mutableListOf()
-                        "w:tc" -> currentCellText = StringBuilder()
-                        "w:t" -> inText = true
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "w:tr" -> currentRow = mutableListOf()
+                    "w:tc" -> currentCellText = StringBuilder()
+                    "w:t" -> inText = true
+                }
+                XmlPullParser.TEXT -> if (inText) currentCellText?.append(parser.text)
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "w:t" -> inText = false
+                    "w:tc" -> {
+                        currentRow?.add(currentCellText?.toString()?.trim().orEmpty())
+                        currentCellText = null
                     }
-                }
-                XmlPullParser.TEXT -> {
-                    if (inText) currentCellText?.append(parser.text)
-                }
-                XmlPullParser.END_TAG -> {
-                    when (parser.name) {
-                        "w:t" -> inText = false
-                        "w:tc" -> {
-                            currentRow?.add(currentCellText?.toString()?.trim().orEmpty())
-                            currentCellText = null
-                        }
-                        "w:tr" -> {
-                            currentRow?.let { rows.add(it) }
-                            currentRow = null
-                        }
+                    "w:tr" -> {
+                        currentRow?.let { rows.add(it) }
+                        currentRow = null
                     }
                 }
             }
@@ -260,18 +253,14 @@ object OfficeScheduleParser {
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "si" -> { inSi = true; current = StringBuilder() }
-                        "t" -> if (inSi) inT = true
-                    }
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "si" -> { inSi = true; current = StringBuilder() }
+                    "t" -> if (inSi) inT = true
                 }
                 XmlPullParser.TEXT -> if (inT) current.append(parser.text)
-                XmlPullParser.END_TAG -> {
-                    when (parser.name) {
-                        "t" -> inT = false
-                        "si" -> { inSi = false; list.add(current.toString()) }
-                    }
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "t" -> inT = false
+                    "si" -> { inSi = false; list.add(current.toString()) }
                 }
             }
             event = parser.next()
@@ -295,43 +284,32 @@ object OfficeScheduleParser {
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "row" -> currentRowMap = mutableMapOf()
-                        "c" -> {
-                            val ref = parser.getAttributeValue(null, "r") ?: ""
-                            currentColIndex = columnRefToIndex(ref)
-                            cellType = parser.getAttributeValue(null, "t")
-                            valueBuilder = StringBuilder()
-                        }
-                        "v" -> inValue = true
-                        "t" -> inInlineText = true
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "row" -> currentRowMap = mutableMapOf()
+                    "c" -> {
+                        val ref = parser.getAttributeValue(null, "r") ?: ""
+                        currentColIndex = columnRefToIndex(ref)
+                        cellType = parser.getAttributeValue(null, "t")
+                        valueBuilder = StringBuilder()
                     }
+                    "v" -> inValue = true
+                    "t" -> inInlineText = true
                 }
-                XmlPullParser.TEXT -> {
-                    if (inValue || inInlineText) valueBuilder.append(parser.text)
-                }
-                XmlPullParser.END_TAG -> {
-                    when (parser.name) {
-                        "v" -> inValue = false
-                        "t" -> inInlineText = false
-                        "c" -> {
-                            val rawVal = valueBuilder.toString().trim()
-                            val resolved = when (cellType) {
-                                "s" -> rawVal.toIntOrNull()?.let { sharedStrings.getOrNull(it) }.orEmpty()
-                                else -> rawVal
-                            }
-                            if (currentColIndex >= 0) {
-                                currentRowMap[currentColIndex] = resolved
-                            }
+                XmlPullParser.TEXT -> if (inValue || inInlineText) valueBuilder.append(parser.text)
+                XmlPullParser.END_TAG -> when (parser.name) {
+                    "v" -> inValue = false
+                    "t" -> inInlineText = false
+                    "c" -> {
+                        val rawVal = valueBuilder.toString().trim()
+                        val resolved = when (cellType) {
+                            "s" -> rawVal.toIntOrNull()?.let { sharedStrings.getOrNull(it) }.orEmpty()
+                            else -> rawVal
                         }
-                        "row" -> {
-                            if (currentRowMap.isNotEmpty()) {
-                                val maxCol = currentRowMap.keys.maxOrNull() ?: 0
-                                val rowList = MutableList(maxCol + 1) { idx -> currentRowMap[idx].orEmpty() }
-                                rows.add(rowList)
-                            }
-                        }
+                        if (currentColIndex >= 0) currentRowMap[currentColIndex] = resolved
+                    }
+                    "row" -> if (currentRowMap.isNotEmpty()) {
+                        val maxCol = currentRowMap.keys.maxOrNull() ?: 0
+                        rows.add(MutableList(maxCol + 1) { idx -> currentRowMap[idx].orEmpty() })
                     }
                 }
             }
@@ -344,9 +322,7 @@ object OfficeScheduleParser {
         val letters = cellRef.takeWhile { it.isLetter() }.uppercase()
         if (letters.isEmpty()) return -1
         var index = 0
-        for (ch in letters) {
-            index = index * 26 + (ch - 'A' + 1)
-        }
+        for (ch in letters) index = index * 26 + (ch - 'A' + 1)
         return index - 1
     }
 }

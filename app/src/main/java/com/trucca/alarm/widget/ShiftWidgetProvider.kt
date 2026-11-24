@@ -72,11 +72,10 @@ class ShiftWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_members, "Kíp của tôi: Kíp ${settings.selectedKip}")
             }
 
-            val openAppIntent = Intent(context, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(
                 context,
                 appWidgetId,
-                openAppIntent,
+                Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)

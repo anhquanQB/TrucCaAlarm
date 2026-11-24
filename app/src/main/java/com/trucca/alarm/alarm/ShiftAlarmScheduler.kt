@@ -26,6 +26,7 @@ object ShiftAlarmScheduler {
 
         val now = LocalDateTime.now()
         val upcoming = repo.getUpcomingShiftsForKip(settings.selectedKip, now, MAX_SCHEDULED_ALARMS)
+        val allSchedules = repo.getAllSchedules()
         var scheduledCount = 0
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -38,17 +39,19 @@ object ShiftAlarmScheduler {
                     .toInstant()
                     .toEpochMilli()
 
-                val daySchedule = repo.getAllSchedules()[shift.shiftDate.toString()]
-             val members = daySchedule?.customMembersFor(shift.shiftType)
-                 ?.ifBlank { settings.kipMembers[shift.kip].orEmpty() }
-                 ?: settings.kipMembers[shift.kip].orEmpty()
-             val title = "Sắp vào ${shift.shiftType.displayName} • Kíp ${shift.kip}"
-             val detail = buildString {
-                 append("Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})")
-                 if (members.isNotBlank()) {
-                     append("\nTrực cùng: $members")
-                 }
-             }
+                val daySchedule = allSchedules[shift.shiftDate.toString()]
+                val members = daySchedule?.customMembersFor(shift.shiftType)
+                    ?.ifBlank { settings.kipMembers[shift.kip].orEmpty() }
+                    ?: settings.kipMembers[shift.kip].orEmpty()
+
+                val title = "Sắp vào ${shift.shiftType.displayName} • Kíp ${shift.kip}"
+                val detail = buildString {
+                    append("Giờ vào ca: ${shift.startDateTime.format(timeFmt)} (${settings.shiftTimeConfig.formattedRange(shift.shiftType)})")
+                    if (members.isNotBlank()) {
+                        append("
+Trực cùng: $members")
+                    }
+                }
 
                 scheduleExact(
                     context = context,
@@ -65,15 +68,23 @@ object ShiftAlarmScheduler {
     }
 
     fun scheduleTestAlarm(context: Context, delaySeconds: Long = 5) {
+        val repo = ScheduleRepository(context)
+        val settings = repo.getSettings()
+        val members = settings.kipMembers[settings.selectedKip].orEmpty()
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val triggerAtMillis = System.currentTimeMillis() + delaySeconds * 1000L
+        val detail = buildString {
+            append("Chuông điện thoại & đồng hồ Huawei đang hoạt động.")
+            if (members.isNotBlank()) append("
+Trực cùng: $members")
+        }
         scheduleExact(
             context = context,
             alarmManager = alarmManager,
             requestCode = TEST_REQUEST_CODE,
             triggerAtMillis = triggerAtMillis,
-            title = "Báo thức thử nghiệm • Trực Ca",
-            detail = "Chuông báo thức điện thoại & thông báo sang đồng hồ Huawei đang hoạt động."
+            title = "Báo thức thử • Kíp ${settings.selectedKip}",
+            detail = detail
         )
     }
 
@@ -93,11 +104,10 @@ object ShiftAlarmScheduler {
     fun cancelAll(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         for (i in 0 until MAX_SCHEDULED_ALARMS) {
-            val intent = Intent(context, AlarmReceiver::class.java)
             val pi = PendingIntent.getBroadcast(
                 context,
                 BASE_REQUEST_CODE + i,
-                intent,
+                Intent(context, AlarmReceiver::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarmManager.cancel(pi)

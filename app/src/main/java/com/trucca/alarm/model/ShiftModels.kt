@@ -10,6 +10,15 @@ enum class ShiftType(val displayName: String, val shortName: String) {
     NIGHT("Ca đêm", "Đêm")
 }
 
+enum class GlassThemeId(val label: String) {
+    OCEAN("Xanh Đại Dương"),
+    EMERALD("Ngọc Lục Bảo"),
+    VIOLET("Tím Tinh Vân"),
+    AMBER("Hổ Phách"),
+    CRIMSON("Đỏ Ruby"),
+    TITANIUM("Xám Titan")
+}
+
 data class DaySchedule(
     val date: String, // YYYY-MM-DD
     val morningKip: String,
@@ -33,13 +42,6 @@ data class DaySchedule(
 
     fun hasCustomMembers(): Boolean {
         return morningMembers.isNotBlank() || afternoonMembers.isNotBlank() || nightMembers.isNotBlank()
-    }
-
-    fun shiftForKip(kip: String): ShiftType? = when {
-        morningKip.equals(kip, ignoreCase = true) -> ShiftType.MORNING
-        afternoonKip.equals(kip, ignoreCase = true) -> ShiftType.AFTERNOON
-        nightKip.equals(kip, ignoreCase = true) -> ShiftType.NIGHT
-        else -> null
     }
 }
 
@@ -72,6 +74,7 @@ data class ShiftTimeConfig(
 
 data class AppSettings(
     val selectedKip: String = "A",
+    val themeId: String = GlassThemeId.OCEAN.name,
     val alarmEnabled: Boolean = true,
     val morningAlarmBeforeMin: Int = 60,
     val afternoonAlarmBeforeMin: Int = 60,
@@ -80,17 +83,21 @@ data class AppSettings(
     val watchRepeatCount: Int = 3,
     val shiftTimeConfig: ShiftTimeConfig = ShiftTimeConfig(),
     val kipMembers: Map<String, String> = mapOf(
-        "A" to "Kíp A (Vào Báo thức để nhập tên thành viên)",
-        "B" to "Kíp B (Vào Báo thức để nhập tên thành viên)",
+        "A" to "Nguyễn Anh Quân, Trần Xuân An, Nguyễn Văn Tuấn",
+        "B" to "Phạm Đình Tuấn, Trần Xuân Lộc, Hoàng Đức Kỳ",
         "C" to "Chu Tiến Đạt, Trần Đình Hợi, Nguyễn Văn Dũng(DP)",
-        "D" to "Kíp D (Vào Báo thức để nhập tên thành viên)",
-        "E" to "Kíp E (Vào Báo thức để nhập tên thành viên)"
+        "D" to "Đặng Đình Dương, Trần Quốc An, Hoàng Minh Dương",
+        "E" to "Hoàng Thanh Hòa, Phạm Thành Vinh, Phạm Thị Thủy"
     )
 ) {
     fun alarmLeadMinutes(type: ShiftType): Int = when (type) {
         ShiftType.MORNING -> morningAlarmBeforeMin
         ShiftType.AFTERNOON -> afternoonAlarmBeforeMin
         ShiftType.NIGHT -> nightAlarmBeforeMin
+    }
+
+    fun resolvedTheme(): GlassThemeId {
+        return GlassThemeId.entries.firstOrNull { it.name == themeId } ?: GlassThemeId.OCEAN
     }
 }
 
@@ -118,7 +125,6 @@ data class UpcomingShiftInfo(
 object DefaultScheduleData {
     val ALL_KIPS = listOf("A", "B", "C", "D", "E")
 
-    // Exact 10-day cycle extracted from user's November & December 2026 schedules
     private val cycleMorning = listOf("B", "B", "C", "C", "D", "D", "E", "E", "A", "A")
     private val cycleAfternoon = listOf("C", "D", "D", "E", "E", "A", "A", "B", "B", "C")
     private val cycleNight = listOf("A", "A", "B", "B", "C", "C", "D", "D", "E", "E")

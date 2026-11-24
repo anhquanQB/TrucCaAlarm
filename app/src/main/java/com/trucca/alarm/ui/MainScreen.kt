@@ -12,40 +12,34 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -70,17 +65,12 @@ import com.trucca.alarm.model.ActiveShiftInfo
 import com.trucca.alarm.model.AppSettings
 import com.trucca.alarm.model.DaySchedule
 import com.trucca.alarm.model.DefaultScheduleData
+import com.trucca.alarm.model.GlassThemeId
 import com.trucca.alarm.model.UpcomingShiftInfo
-import com.trucca.alarm.ui.theme.AccentBlue
-import com.trucca.alarm.ui.theme.AccentYellow
-import com.trucca.alarm.ui.theme.BlueEnd
-import com.trucca.alarm.ui.theme.BlueMid
-import com.trucca.alarm.ui.theme.BlueStart
-import com.trucca.alarm.ui.theme.CardSurface
-import com.trucca.alarm.ui.theme.CardSurfaceAlt
-import com.trucca.alarm.ui.theme.DarkBg
-import com.trucca.alarm.ui.theme.MutedText
-import com.trucca.alarm.ui.theme.SoftWhite
+import com.trucca.alarm.ui.theme.GlassPanel
+import com.trucca.alarm.ui.theme.LiquidGlassBackdrop
+import com.trucca.alarm.ui.theme.LocalGlassPalette
+import com.trucca.alarm.ui.theme.paletteFor
 import kotlinx.coroutines.delay
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -91,6 +81,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun MainScreen(
     repo: ScheduleRepository,
+    settings: AppSettings,
     statusMessage: String?,
     onClearStatus: () -> Unit,
     onSettingsChanged: (AppSettings) -> Unit,
@@ -102,9 +93,9 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
-    var settings by remember { mutableStateOf(repo.getSettings()) }
     var schedulesVersion by remember { mutableIntStateOf(0) }
 
+    // Lightweight 1-second ticker reading from in-memory cached repository
     LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
@@ -119,99 +110,148 @@ fun MainScreen(
         repo.getUpcomingShiftsForKip(settings.selectedKip, now, 10)
     }
 
-    Scaffold(
-        containerColor = DarkBg,
-        bottomBar = {
-            NavigationBar(containerColor = Color(0xFF0C1424)) {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Trang chủ") },
-                    label = { Text("Trực ca") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = "Lịch tháng") },
-                    label = { Text("Lịch tháng") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(Icons.Default.UploadFile, contentDescription = "Nhập lịch") },
-                    label = { Text("Nhập lịch") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Cài đặt") },
-                    label = { Text("Báo thức") }
-                )
-            }
-        }
-    ) { innerPadding ->
-        Box(
+    LiquidGlassBackdrop {
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .statusBarsPadding()
         ) {
-            when (selectedTab) {
-                0 -> HomeTab(
-                    now = now,
-                    settings = settings,
-                    activeShift = activeShift,
-                    upcomingMyShifts = upcomingMyShifts,
-                    onSelectKip = { kip ->
-                        val updated = settings.copy(selectedKip = kip)
-                        settings = updated
-                        onSettingsChanged(updated)
-                    }
-                )
-                1 -> CalendarTab(
-                    repo = repo,
-                    settings = settings,
-                    schedulesVersion = schedulesVersion,
-                    onDayEdited = { day ->
-                        repo.saveDayExact(day)
-                        schedulesVersion++
-                        onSchedulesUpdated()
-                    }
-                )
-                2 -> ImportTab(
-                    onPickExcelOrWord = onPickExcelOrWord,
-                    onPickImageOcr = onPickImageOcr,
-                    onGenerateCycle = { year, month, offset ->
-                        val generated = DefaultScheduleData.generateCycleForMonth(year, month, offset)
-                        repo.upsertSchedules(generated)
-                        schedulesVersion++
-                        onSchedulesUpdated()
-                    }
-                )
-                3 -> SettingsTab(
-                    settings = settings,
-                    onSave = { updated ->
-                        settings = updated
-                        onSettingsChanged(updated)
-                    },
-                    onTestAlarm = onTestAlarm,
-                    onTestWatchNotification = onTestWatchNotification
-                )
+            Box(modifier = Modifier.weight(1f)) {
+                when (selectedTab) {
+                    0 -> HomeTab(
+                        now = now,
+                        settings = settings,
+                        activeShift = activeShift,
+                        upcomingMyShifts = upcomingMyShifts,
+                        onSelectKip = { kip ->
+                            onSettingsChanged(settings.copy(selectedKip = kip))
+                        }
+                    )
+                    1 -> CalendarTab(
+                        repo = repo,
+                        settings = settings,
+                        schedulesVersion = schedulesVersion,
+                        onDayEdited = { day ->
+                            repo.saveDayExact(day)
+                            schedulesVersion++
+                            onSchedulesUpdated()
+                        }
+                    )
+                    2 -> ImportTab(
+                        onPickExcelOrWord = onPickExcelOrWord,
+                        onPickImageOcr = onPickImageOcr,
+                        onGenerateCycle = { year, month, offset ->
+                            val generated = DefaultScheduleData.generateCycleForMonth(year, month, offset)
+                            repo.upsertSchedules(generated)
+                            schedulesVersion++
+                            onSchedulesUpdated()
+                        }
+                    )
+                    3 -> SettingsTab(
+                        settings = settings,
+                        onSave = onSettingsChanged,
+                        onTestAlarm = onTestAlarm,
+                        onTestWatchNotification = onTestWatchNotification
+                    )
+                }
             }
 
-            if (!statusMessage.isNullOrBlank()) {
-                AlertDialog(
-                    onDismissRequest = onClearStatus,
-                    confirmButton = {
-                        TextButton(onClick = {
-                            schedulesVersion++
-                            onClearStatus()
-                        }) { Text("Đóng") }
-                    },
-                    title = { Text("Thông báo") },
-                    text = { Text(statusMessage) }
-                )
+            FloatingGlassBottomBar(
+                selectedTab = selectedTab,
+                onSelectTab = { selectedTab = it }
+            )
+        }
+
+        if (!statusMessage.isNullOrBlank()) {
+            AlertDialog(
+                onDismissRequest = onClearStatus,
+                confirmButton = {
+                    TextButton(onClick = {
+                        schedulesVersion++
+                        onClearStatus()
+                    }) { Text("Đóng") }
+                },
+                title = { Text("Thông báo") },
+                text = { Text(statusMessage) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun FloatingGlassBottomBar(
+    selectedTab: Int,
+    onSelectTab: (Int) -> Unit
+) {
+    val p = LocalGlassPalette.current
+    val items = listOf(
+        Triple(0, "Trực ca", Icons.Default.Home),
+        Triple(1, "Lịch tháng", Icons.Default.DateRange),
+        Triple(2, "Nhập lịch", Icons.Default.AddCircle),
+        Triple(3, "Cài đặt", Icons.Default.Settings)
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        GlassPanel(
+            modifier = Modifier.fillMaxWidth(),
+            cornerRadius = 28.dp,
+            alphaBoost = 0.04f
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEach { (index, label, icon) ->
+                    val selected = selectedTab == index
+                    GlassNavItem(
+                        icon = icon,
+                        label = label,
+                        selected = selected,
+                        accent = p.accent,
+                        onClick = { onSelectTab(index) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun GlassNavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val pillColor = if (selected) accent.copy(alpha = 0.26f) else Color.Transparent
+    val contentColor = if (selected) Color.White else Color(0xFF94A3B8)
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(pillColor)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(22.dp))
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+        )
     }
 }
 
@@ -223,6 +263,7 @@ private fun HomeTab(
     upcomingMyShifts: List<UpcomingShiftInfo>,
     onSelectKip: (String) -> Unit
 ) {
+    val p = LocalGlassPalette.current
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
 
@@ -240,26 +281,26 @@ private fun HomeTab(
                 Column {
                     Text(
                         text = "Lịch Trực Ca",
-                        color = SoftWhite,
-                        fontSize = 22.sp,
+                        color = p.softWhite,
+                        fontSize = 23.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "${vietnameseWeekday(now.dayOfWeek)}, ${now.format(dateFmt)} • ${now.format(timeFmt)}",
-                        color = MutedText,
+                        color = p.mutedText,
                         fontSize = 13.sp
                     )
                 }
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(AccentYellow.copy(alpha = 0.16f))
-                        .border(1.dp, AccentYellow.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(p.highlightYellow.copy(alpha = 0.16f))
+                        .border(1.dp, p.highlightYellow.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = "Kíp tôi: ${settings.selectedKip}",
-                        color = AccentYellow,
+                        color = p.highlightYellow,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -267,15 +308,17 @@ private fun HomeTab(
             }
         }
 
+        // Liquid Glass Hero Card
         item {
             ActiveShiftHeroCard(activeShift = activeShift, settings = settings)
         }
 
+        // Quick Kíp switcher
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Chọn Kíp trực của bạn",
-                    color = MutedText,
+                    color = p.mutedText,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -288,15 +331,23 @@ private fun HomeTab(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (isSelected) AccentYellow else CardSurface)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (isSelected) p.highlightYellow
+                                    else Color.White.copy(alpha = 0.08f)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isSelected) p.highlightYellow else Color.White.copy(alpha = 0.22f),
+                                    RoundedCornerShape(16.dp)
+                                )
                                 .clickable { onSelectKip(kip) }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "Kíp $kip",
-                                color = if (isSelected) Color(0xFF0F172A) else SoftWhite,
+                                color = if (isSelected) Color(0xFF0F172A) else p.softWhite,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
@@ -317,7 +368,7 @@ private fun HomeTab(
         item {
             Text(
                 text = "Các ca sắp tới của Kíp ${settings.selectedKip}",
-                color = SoftWhite,
+                color = p.softWhite,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -325,14 +376,10 @@ private fun HomeTab(
 
         if (upcomingMyShifts.isEmpty()) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CardSurface),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
                     Text(
                         text = "Chưa có lịch trực sắp tới cho Kíp ${settings.selectedKip}. Hãy sang mục Nhập lịch để nạp file Excel/Word/Ảnh hoặc tạo chu kỳ tháng mới.",
-                        color = MutedText,
+                        color = p.mutedText,
                         modifier = Modifier.padding(16.dp),
                         fontSize = 14.sp
                     )
@@ -351,14 +398,23 @@ private fun ActiveShiftHeroCard(
     activeShift: ActiveShiftInfo?,
     settings: AppSettings
 ) {
-    val gradient = Brush.linearGradient(
-        colors = listOf(BlueStart, BlueMid, BlueEnd)
+    val p = LocalGlassPalette.current
+    val shape = RoundedCornerShape(28.dp)
+    val baseGradient = Brush.linearGradient(colors = listOf(p.heroStart, p.heroMid, p.heroEnd))
+    val glassSheen = Brush.linearGradient(
+        colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent, Color.White.copy(alpha = 0.06f))
     )
+    val rimBorder = Brush.linearGradient(
+        colors = listOf(Color.White.copy(alpha = 0.48f), Color.White.copy(alpha = 0.10f), p.accent.copy(alpha = 0.35f))
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .background(gradient)
+            .clip(shape)
+            .background(baseGradient)
+            .background(glassSheen)
+            .border(1.2.dp, rimBorder, shape)
             .padding(22.dp)
     ) {
         if (activeShift != null) {
@@ -375,7 +431,7 @@ private fun ActiveShiftHeroCard(
                 ) {
                     Text(
                         text = "ĐANG TRỰC",
-                        color = Color(0xFFA8C7FA),
+                        color = Color.White.copy(alpha = 0.78f),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.6.sp
@@ -383,9 +439,9 @@ private fun ActiveShiftHeroCard(
                     if (isMyKip) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(AccentYellow)
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(p.highlightYellow)
+                                .padding(horizontal = 9.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = "CA CỦA TÔI",
@@ -406,7 +462,7 @@ private fun ActiveShiftHeroCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "$range · còn $remainingText",
-                    color = Color(0xFFD6E4FF),
+                    color = Color.White.copy(alpha = 0.88f),
                     fontSize = 17.sp
                 )
                 Spacer(modifier = Modifier.height(14.dp))
@@ -416,13 +472,13 @@ private fun ActiveShiftHeroCard(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = if (isMyKip) AccentYellow else Color(0xFF93C5FD),
-                    trackColor = Color.White.copy(alpha = 0.2f)
+                    color = if (isMyKip) p.highlightYellow else Color.White.copy(alpha = 0.88f),
+                    trackColor = Color.White.copy(alpha = 0.22f)
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = activeShift.membersText.ifBlank { "Chưa cập nhật nhân sự Kíp ${activeShift.kip}" },
-                    color = Color(0xFFF1F5FF),
+                    color = Color.White.copy(alpha = 0.95f),
                     fontSize = 16.sp,
                     lineHeight = 22.sp
                 )
@@ -431,7 +487,7 @@ private fun ActiveShiftHeroCard(
             Column {
                 Text(
                     text = "ĐANG TRỰC",
-                    color = Color(0xFFA8C7FA),
+                    color = Color.White.copy(alpha = 0.78f),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.6.sp
@@ -446,7 +502,7 @@ private fun ActiveShiftHeroCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Vào mục Nhập lịch để nạp file Excel/Word/Ảnh hoặc tạo lịch theo chu kỳ.",
-                    color = Color(0xFFD6E4FF),
+                    color = Color.White.copy(alpha = 0.85f),
                     fontSize = 15.sp
                 )
             }
@@ -460,22 +516,19 @@ private fun MyShiftCountdownCard(
     activeShift: ActiveShiftInfo?,
     nextShift: UpcomingShiftInfo?
 ) {
+    val p = LocalGlassPalette.current
     val isCurrentlyWorking = activeShift?.kip.equals(settings.selectedKip, ignoreCase = true)
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Schedule,
+                    imageVector = Icons.Default.Notifications,
                     contentDescription = null,
-                    tint = AccentYellow,
-                    modifier = Modifier.size(20.dp)
+                    tint = p.highlightYellow,
+                    modifier = Modifier.size(19.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -484,7 +537,7 @@ private fun MyShiftCountdownCard(
                     } else {
                         "Đếm ngược tới ca kế tiếp của Kíp ${settings.selectedKip}"
                     },
-                    color = SoftWhite,
+                    color = p.softWhite,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
@@ -494,45 +547,37 @@ private fun MyShiftCountdownCard(
             if (isCurrentlyWorking && activeShift != null) {
                 Text(
                     text = "Còn ${ScheduleRepository.formatCountdown(activeShift.remainingSeconds)} là hết ${activeShift.shiftType.displayName}",
-                    color = AccentYellow,
+                    color = p.highlightYellow,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             } else if (nextShift != null) {
                 Text(
                     text = "Còn ${ScheduleRepository.formatCountdown(nextShift.secondsUntilStart)}",
-                    color = AccentYellow,
+                    color = p.highlightYellow,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "${nextShift.shiftType.displayName} • ${vietnameseWeekday(nextShift.shiftDate.dayOfWeek)} ${nextShift.shiftDate.format(dateFmt)} (${settings.shiftTimeConfig.formattedRange(nextShift.shiftType)})",
-                    color = SoftWhite,
+                    color = p.softWhite,
                     fontSize = 14.sp
                 )
                 if (settings.alarmEnabled) {
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Alarm,
-                            contentDescription = null,
-                            tint = AccentBlue,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Báo thức lúc ${nextShift.alarmDateTime.format(timeFmt)} ngày ${nextShift.alarmDateTime.format(dateFmt)}" +
-                                if (settings.watchSyncEnabled) " • Đẩy Huawei Watch" else "",
-                            color = AccentBlue,
-                            fontSize = 13.sp
-                        )
-                    }
+                    Text(
+                        text = "Báo thức lúc ${nextShift.alarmDateTime.format(timeFmt)} ngày ${nextShift.alarmDateTime.format(dateFmt)}" +
+                            if (settings.watchSyncEnabled) " • Đẩy Huawei Watch" else "",
+                        color = p.accent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             } else {
                 Text(
                     text = "Chưa tìm thấy ca tiếp theo trong dữ liệu.",
-                    color = MutedText,
+                    color = p.mutedText,
                     fontSize = 14.sp
                 )
             }
@@ -542,13 +587,10 @@ private fun MyShiftCountdownCard(
 
 @Composable
 private fun UpcomingShiftRow(shift: UpcomingShiftInfo, settings: AppSettings) {
+    val p = LocalGlassPalette.current
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
-    Card(
-        colors = CardDefaults.cardColors(containerColor = CardSurfaceAlt),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -559,27 +601,23 @@ private fun UpcomingShiftRow(shift: UpcomingShiftInfo, settings: AppSettings) {
             Column {
                 Text(
                     text = "${vietnameseWeekday(shift.shiftDate.dayOfWeek)}, ${shift.shiftDate.format(dateFmt)}",
-                    color = SoftWhite,
+                    color = p.softWhite,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "${shift.shiftType.displayName} • ${settings.shiftTimeConfig.formattedRange(shift.shiftType)}",
-                    color = AccentYellow,
+                    color = p.highlightYellow,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "Báo thức",
-                    color = MutedText,
-                    fontSize = 11.sp
-                )
+                Text(text = "Báo thức", color = p.mutedText, fontSize = 11.sp)
                 Text(
                     text = if (settings.alarmEnabled) shift.alarmDateTime.format(timeFmt) else "Đang tắt",
-                    color = if (settings.alarmEnabled) AccentBlue else MutedText,
+                    color = if (settings.alarmEnabled) p.accent else p.mutedText,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
@@ -595,6 +633,7 @@ private fun CalendarTab(
     schedulesVersion: Int,
     onDayEdited: (DaySchedule) -> Unit
 ) {
+    val p = LocalGlassPalette.current
     var currentMonth by remember { mutableStateOf(YearMonth.of(2026, 11)) }
     val monthSchedules = remember(currentMonth, schedulesVersion) {
         repo.getSchedulesForMonth(currentMonth).associateBy { it.date }
@@ -604,7 +643,7 @@ private fun CalendarTab(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -612,78 +651,87 @@ private fun CalendarTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { currentMonth = currentMonth.minusMonths(1) }) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = "Tháng trước", tint = SoftWhite)
+                Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "Tháng trước", tint = p.softWhite)
             }
             Text(
                 text = "Tháng ${currentMonth.monthValue} / ${currentMonth.year}",
-                color = SoftWhite,
+                color = p.softWhite,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
             IconButton(onClick = { currentMonth = currentMonth.plusMonths(1) }) {
-                Icon(Icons.Default.ChevronRight, contentDescription = "Tháng sau", tint = SoftWhite)
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Tháng sau", tint = p.softWhite)
             }
         }
 
         Text(
             text = "Ô vàng là Kíp ${settings.selectedKip} • Chạm vào từng ngày để sửa Kíp & nhập tên người trực riêng từng ca",
-            color = MutedText,
+            color = p.mutedText,
             fontSize = 12.sp,
             modifier = Modifier.padding(bottom = 10.dp)
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                .background(Color(0xFF1E293B))
-                .padding(vertical = 10.dp, horizontal = 8.dp)
-        ) {
-            Text("Ngày", color = SoftWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f), textAlign = TextAlign.Center, fontSize = 13.sp)
-            Text("Sáng", color = SoftWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
-            Text("Chiều", color = SoftWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
-            Text("Đêm", color = SoftWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
+        GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 14.dp, alphaBoost = 0.04f) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp, horizontal = 8.dp)
+            ) {
+                Text("Ngày", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f), textAlign = TextAlign.Center, fontSize = 13.sp)
+                Text("Sáng", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
+                Text("Chiều", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
+                Text("Đêm", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
+            }
         }
 
         val daysInMonth = (1..currentMonth.lengthOfMonth()).toList()
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = PaddingValues(top = 6.dp, bottom = 16.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp)
         ) {
             items(daysInMonth) { dayNum ->
                 val date = currentMonth.atDay(dayNum)
                 val sched = monthSchedules[date.toString()] ?: DaySchedule(date.toString(), "-", "-", "-")
                 val isToday = date == LocalDate.now()
 
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isToday) Color(0xFF1D3B6E) else CardSurface)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isToday) p.accent.copy(alpha = 0.25f)
+                            else Color.White.copy(alpha = 0.06f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isToday) p.accent.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f),
+                            RoundedCornerShape(12.dp)
+                        )
                         .clickable { editingDay = sched }
-                        .padding(vertical = 8.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 8.dp, horizontal = 8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1.2f),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (sched.hasCustomMembers()) "$dayNum*" else "$dayNum",
-                            color = if (isToday) AccentYellow else SoftWhite,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        Text(
-                            text = vietnameseShortWeekday(date.dayOfWeek),
-                            color = MutedText,
-                            fontSize = 11.sp
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            modifier = Modifier.weight(1.2f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = if (sched.hasCustomMembers()) "$dayNum*" else "$dayNum",
+                                color = if (isToday) p.highlightYellow else p.softWhite,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = vietnameseShortWeekday(date.dayOfWeek),
+                                color = p.mutedText,
+                                fontSize = 11.sp
+                            )
+                        }
+                        ShiftCellBadge(sched.morningKip, sched.morningKip == settings.selectedKip, Modifier.weight(1f))
+                        ShiftCellBadge(sched.afternoonKip, sched.afternoonKip == settings.selectedKip, Modifier.weight(1f))
+                        ShiftCellBadge(sched.nightKip, sched.nightKip == settings.selectedKip, Modifier.weight(1f))
                     }
-                    ShiftCellBadge(sched.morningKip, sched.morningKip == settings.selectedKip, Modifier.weight(1f))
-                    ShiftCellBadge(sched.afternoonKip, sched.afternoonKip == settings.selectedKip, Modifier.weight(1f))
-                    ShiftCellBadge(sched.nightKip, sched.nightKip == settings.selectedKip, Modifier.weight(1f))
                 }
             }
         }
@@ -703,21 +751,19 @@ private fun CalendarTab(
 
 @Composable
 private fun ShiftCellBadge(kip: String, isHighlighted: Boolean, modifier: Modifier) {
-    Box(
-        modifier = modifier.padding(horizontal = 4.dp),
-        contentAlignment = Alignment.Center
-    ) {
+    val p = LocalGlassPalette.current
+    Box(modifier = modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (isHighlighted) AccentYellow else Color(0xFF1B273D))
+                .clip(RoundedCornerShape(9.dp))
+                .background(if (isHighlighted) p.highlightYellow else Color.White.copy(alpha = 0.09f))
                 .padding(vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = kip,
-                color = if (isHighlighted) Color(0xFF0F172A) else SoftWhite,
+                color = if (isHighlighted) Color(0xFF0F172A) else p.softWhite,
                 fontWeight = if (isHighlighted) FontWeight.ExtraBold else FontWeight.Medium,
                 fontSize = 14.sp
             )
@@ -748,7 +794,7 @@ private fun EditDayDialog(
             ) {
                 Text(
                     text = "Để trống ô tên người trực nếu muốn dùng danh sách mặc định của Kíp.",
-                    color = MutedText,
+                    color = Color(0xFF94A3B8),
                     fontSize = 12.sp
                 )
                 OutlinedTextField(
@@ -803,9 +849,7 @@ private fun EditDayDialog(
                 )
             }) { Text("Lưu") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Hủy") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
     )
 }
 
@@ -815,6 +859,7 @@ private fun ImportTab(
     onPickImageOcr: (Int, Int) -> Unit,
     onGenerateCycle: (Int, Int, Int) -> Unit
 ) {
+    val p = LocalGlassPalette.current
     var targetMonth by remember { mutableStateOf(YearMonth.now()) }
     var cycleOffset by remember { mutableIntStateOf(0) }
 
@@ -824,25 +869,16 @@ private fun ImportTab(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
+            Text("Nhập lịch trực ca", color = p.softWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                text = "Nhập lịch trực ca",
-                color = SoftWhite,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Hỗ trợ Excel (.xlsx), Word (.docx), ảnh chụp bảng lịch và tự sinh theo chu kỳ 10 ngày.",
-                color = MutedText,
+                "Hỗ trợ PDF (.pdf), Excel (.xlsx), Word (.docx), ảnh chụp bảng lịch và tự sinh theo chu kỳ 10 ngày.",
+                color = p.mutedText,
                 fontSize = 13.sp
             )
         }
 
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -850,19 +886,19 @@ private fun ImportTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Áp dụng cho tháng:", color = SoftWhite, fontWeight = FontWeight.Medium)
+                    Text("Áp dụng cho tháng:", color = p.softWhite, fontWeight = FontWeight.Medium)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { targetMonth = targetMonth.minusMonths(1) }) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = null, tint = SoftWhite)
+                            Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null, tint = p.softWhite)
                         }
                         Text(
                             text = "%02d/%04d".format(targetMonth.monthValue, targetMonth.year),
-                            color = AccentYellow,
+                            color = p.highlightYellow,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                         IconButton(onClick = { targetMonth = targetMonth.plusMonths(1) }) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = SoftWhite)
+                            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = p.softWhite)
                         }
                     }
                 }
@@ -870,54 +906,38 @@ private fun ImportTab(
         }
 
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Description, contentDescription = null, tint = AccentBlue)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Nhập từ Excel (.xlsx) hoặc Word (.docx)", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
+                    Text("Nhập từ PDF (.pdf), Excel (.xlsx) hoặc Word (.docx)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        text = "Tự động đọc bảng có các dòng Ngày, Sáng, Chiều, Đêm giống mẫu Phụ lục lịch trực cơ quan bạn.",
-                        color = MutedText,
+                        "Tự động đọc bảng có các dòng Ngày, Sáng, Chiều, Đêm giống mẫu Phụ lục lịch trực cơ quan bạn.",
+                        color = p.mutedText,
                         fontSize = 13.sp
                     )
                     Button(
                         onClick = { onPickExcelOrWord(targetMonth.year, targetMonth.monthValue) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Chọn file Excel / Word / CSV")
+                        Text("Chọn file PDF / Excel / Word / CSV")
                     }
                 }
             }
         }
 
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Image, contentDescription = null, tint = AccentYellow)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Nhập từ hình ảnh bảng lịch (OCR)", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
+                    Text("Nhập từ hình ảnh bảng lịch (OCR)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        text = "Chọn ảnh chụp rõ nét bảng lịch trực. Sau khi nhận diện, bạn có thể vào tab Lịch tháng để kiểm tra và chỉnh tay nếu có ô sai.",
-                        color = MutedText,
+                        "Chọn ảnh chụp rõ nét bảng lịch trực. Sau khi nhận diện, bạn có thể vào tab Lịch tháng để rà soát lại.",
+                        color = p.mutedText,
                         fontSize = 13.sp
                     )
                     OutlinedButton(
                         onClick = { onPickImageOcr(targetMonth.year, targetMonth.monthValue) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(14.dp)
                     ) {
                         Text("Chọn ảnh lịch trực từ thư viện")
                     }
@@ -926,28 +946,24 @@ private fun ImportTab(
         }
 
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Tạo nhanh theo chu kỳ 5 kíp (10 ngày)", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Tạo nhanh theo chu kỳ 5 kíp (10 ngày)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        text = "Tự sinh lịch đủ 30/31 ngày theo đúng quy luật xoay vòng A–E như tháng 11 & 12/2026.",
-                        color = MutedText,
+                        "Tự sinh lịch đủ 30/31 ngày theo đúng quy luật xoay vòng A–E như tháng 11 & 12/2026.",
+                        color = p.mutedText,
                         fontSize = 13.sp
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Độ lệch ngày đầu (0–9):", color = SoftWhite, fontSize = 13.sp)
+                        Text("Độ lệch ngày đầu (0–9):", color = p.softWhite, fontSize = 13.sp)
                         OutlinedButton(onClick = { cycleOffset = (cycleOffset + 9) % 10 }) { Text("-") }
-                        Text("$cycleOffset", color = AccentYellow, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("$cycleOffset", color = p.highlightYellow, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         OutlinedButton(onClick = { cycleOffset = (cycleOffset + 1) % 10 }) { Text("+") }
                     }
                     Button(
                         onClick = { onGenerateCycle(targetMonth.year, targetMonth.monthValue, cycleOffset) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                     ) {
                         Text("Tạo lịch tháng %02d/%04d".format(targetMonth.monthValue, targetMonth.year), color = Color.White)
@@ -965,6 +981,7 @@ private fun SettingsTab(
     onTestAlarm: () -> Unit,
     onTestWatchNotification: () -> Unit
 ) {
+    val p = LocalGlassPalette.current
     var alarmEnabled by remember(settings) { mutableStateOf(settings.alarmEnabled) }
     var watchSyncEnabled by remember(settings) { mutableStateOf(settings.watchSyncEnabled) }
     var watchRepeatCount by remember(settings) { mutableIntStateOf(settings.watchRepeatCount) }
@@ -972,8 +989,10 @@ private fun SettingsTab(
     var afternoonBefore by remember(settings) { mutableStateOf(settings.afternoonAlarmBeforeMin.toString()) }
     var nightBefore by remember(settings) { mutableStateOf(settings.nightAlarmBeforeMin.toString()) }
     var membersMap by remember(settings) { mutableStateOf(settings.kipMembers.toMutableMap()) }
+    var selectedTheme by remember(settings) { mutableStateOf(settings.resolvedTheme()) }
 
-    fun buildUpdatedSettings(): AppSettings = settings.copy(
+    fun buildUpdatedSettings(themeOverride: GlassThemeId = selectedTheme): AppSettings = settings.copy(
+        themeId = themeOverride.name,
         alarmEnabled = alarmEnabled,
         watchSyncEnabled = watchSyncEnabled,
         watchRepeatCount = watchRepeatCount,
@@ -989,21 +1008,75 @@ private fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text(
-                text = "Báo thức, Đồng hồ & Nhân sự",
-                color = SoftWhite,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Giao diện, Báo thức & Đồng hồ", color = p.softWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+
+        // Theme color picker (Liquid Glass)
+        item {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Màu sắc Liquid Glass", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Chạm để đổi màu toàn bộ giao diện ngay lập tức.", color = p.mutedText, fontSize = 12.sp)
+
+                    val themes = GlassThemeId.entries
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        themes.chunked(3).forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { t ->
+                                    val tp = paletteFor(t)
+                                    val active = t == selectedTheme
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(if (active) tp.heroStart.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f))
+                                            .border(
+                                                width = if (active) 1.5.dp else 1.dp,
+                                                color = if (active) tp.accent else Color.White.copy(alpha = 0.16f),
+                                                shape = RoundedCornerShape(14.dp)
+                                            )
+                                            .clickable {
+                                                selectedTheme = t
+                                                onSave(buildUpdatedSettings(themeOverride = t))
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(Brush.linearGradient(listOf(tp.heroStart, tp.accent))),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (active) {
+                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = t.label,
+                                            color = p.softWhite,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Alarm card
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1011,8 +1084,8 @@ private fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Bật báo thức tự động cho Kíp ${settings.selectedKip}", color = SoftWhite, fontWeight = FontWeight.Bold)
-                            Text("Tự đặt chuông trước mỗi ca trực của bạn", color = MutedText, fontSize = 12.sp)
+                            Text("Bật báo thức tự động cho Kíp ${settings.selectedKip}", color = p.softWhite, fontWeight = FontWeight.Bold)
+                            Text("Tự đặt chuông trước mỗi ca trực của bạn", color = p.mutedText, fontSize = 12.sp)
                         }
                         Switch(
                             checked = alarmEnabled,
@@ -1049,50 +1122,31 @@ private fun SettingsTab(
                         Button(
                             onClick = { onSave(buildUpdatedSettings()) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Lưu cài đặt")
-                        }
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text("Lưu cài đặt") }
                         OutlinedButton(
                             onClick = onTestAlarm,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Thử chuông")
-                        }
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text("Thử chuông") }
                     }
                 }
             }
         }
 
-        // Huawei Watch GT 6 Pro / Huawei Health sync card
+        // Huawei Watch GT 6 Pro sync card
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Watch, contentDescription = null, tint = AccentBlue)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Liên kết Huawei Watch GT 6 Pro",
-                            color = SoftWhite,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                    }
+                    Text("Liên kết Huawei Watch GT 6 Pro", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Đẩy thông báo rung sang đồng hồ", color = SoftWhite, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text("Tự phát thông báo chuẩn để Huawei Sức khỏe chuyển sang đồng hồ khi báo thức kêu", color = MutedText, fontSize = 12.sp)
+                            Text("Đẩy thông báo rung + tên thành viên sang đồng hồ", color = p.softWhite, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text("Qua Huawei Sức khỏe → Thông báo → bật 'Trực Ca & Báo Thức'", color = p.mutedText, fontSize = 12.sp)
                         }
                         Switch(
                             checked = watchSyncEnabled,
@@ -1106,47 +1160,34 @@ private fun SettingsTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Số nhịp rung lặp (cách 20 giây):", color = SoftWhite, fontSize = 13.sp)
+                        Text("Số nhịp rung lặp (cách 20 giây):", color = p.softWhite, fontSize = 13.sp)
                         OutlinedButton(onClick = {
                             watchRepeatCount = (watchRepeatCount - 1).coerceAtLeast(1)
                             onSave(buildUpdatedSettings())
                         }) { Text("-") }
-                        Text("$watchRepeatCount", color = AccentYellow, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("$watchRepeatCount", color = p.highlightYellow, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         OutlinedButton(onClick = {
                             watchRepeatCount = (watchRepeatCount + 1).coerceAtMost(5)
                             onSave(buildUpdatedSettings())
                         }) { Text("+") }
                     }
-                    Text(
-                        text = "Cách bật trên điện thoại: Mở Huawei Sức khỏe → Thiết bị → chọn Huawei Watch GT 6 Pro → Thông báo → bật ứng dụng 'Trực Ca & Báo Thức'.",
-                        color = MutedText,
-                        fontSize = 12.sp
-                    )
                     OutlinedButton(
                         onClick = onTestWatchNotification,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Watch, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Gửi thông báo thử sang đồng hồ")
-                    }
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Gửi thông báo thử sang đồng hồ") }
                 }
             }
         }
 
         // Default crew per Kíp
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = CardSurface),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Danh sách nhân sự mặc định theo Kíp", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Nhân sự mặc định theo Kíp (TC TĐĐK)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        "Hiển thị trên thẻ ĐANG TRỰC và Widget. Nếu ngày nào có đổi người đi ca, bạn chạm trực tiếp vào ngày đó ở tab Lịch tháng để nhập riêng cho từng ca.",
-                        color = MutedText,
+                        "Đã nạp sẵn theo Phụ lục Tháng 11/2026. Chạm vào từng ngày ở tab Lịch tháng nếu muốn nhập riêng người trực cho ngày đó.",
+                        color = p.mutedText,
                         fontSize = 12.sp
                     )
 
@@ -1167,10 +1208,8 @@ private fun SettingsTab(
                     Button(
                         onClick = { onSave(buildUpdatedSettings()) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Lưu danh sách nhân sự")
-                    }
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Lưu danh sách nhân sự") }
                 }
             }
         }

@@ -11,21 +11,35 @@ android {
         applicationId = "com.trucca.alarm"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 4
+        versionName = "2.1.0"
 
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("trucca-release.jks")
+            storePassword = "trucca2026"
+            keyAlias = "trucca"
+            keyPassword = "trucca2026"
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -61,12 +75,9 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.material:material-icons-core")
 
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.google.mlkit:text-recognition:16.0.0")
-
-    debugImplementation("androidx.compose.ui:ui-tooling")
 }

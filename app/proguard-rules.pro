@@ -1,2 +1,5 @@
-# Keep Gson models
+-keepattributes Signature, *Annotation*, EnclosingMethod, InnerClasses
 -keep class com.trucca.alarm.model.** { *; }
+-keep class com.google.gson.** { *; }
+-dontwarn com.google.mlkit.**
+-dontwarn org.xmlpull.**

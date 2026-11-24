@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:letterSpacing="0.1"
         android:text="ĐANG TRỰC"
-        android:textColor="#A8C7FA"
+        android:textColor="#BFD7FF"
         android:textSize="12sp"
         android:textStyle="bold" />
 
@@ -33,7 +33,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="07:00 – 15:00 · còn 2 giờ 44 phút"
-        android:textColor="#D6E4FF"
+        android:textColor="#DCE8FF"
         android:textSize="15sp" />
 
     <TextView
@@ -43,8 +43,8 @@
         android:layout_marginTop="10dp"
         android:ellipsize="end"
         android:maxLines="2"
-        android:text="Chưa cập nhật danh sách nhân sự"
-        android:textColor="#F1F5FF"
+        android:text="Nguyễn Anh Quân, Trần Xuân An, Nguyễn Văn Tuấn"
+        android:textColor="#F5F8FF"
         android:textSize="14sp" />
 
 </LinearLayout>

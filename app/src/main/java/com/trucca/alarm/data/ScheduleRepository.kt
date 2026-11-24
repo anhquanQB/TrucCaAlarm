@@ -17,47 +17,60 @@ import java.time.YearMonth
 
 class ScheduleRepository(context: Context) {
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val gson = Gson()
 
     fun getSettings(): AppSettings {
-        val raw = prefs.getString(KEY_SETTINGS, null) ?: return AppSettings()
-        return try {
-            gson.fromJson(raw, AppSettings::class.java) ?: AppSettings()
-        } catch (_: Exception) {
+        cachedSettings?.let { return it }
+        val raw = prefs.getString(KEY_SETTINGS, null)
+        val loaded = if (raw.isNullOrBlank()) {
             AppSettings()
+        } else {
+            try {
+                gson.fromJson(raw, AppSettings::class.java) ?: AppSettings()
+            } catch (_: Exception) {
+                AppSettings()
+            }
         }
+        cachedSettings = loaded
+        return loaded
     }
 
     fun saveSettings(settings: AppSettings) {
+        cachedSettings = settings
         prefs.edit().putString(KEY_SETTINGS, gson.toJson(settings)).apply()
     }
 
     fun getAllSchedules(): Map<String, DaySchedule> {
+        cachedSchedules?.let { return it }
         val raw = prefs.getString(KEY_SCHEDULES, null)
-        if (raw.isNullOrBlank()) {
+        val loaded: Map<String, DaySchedule> = if (raw.isNullOrBlank()) {
             val defaults = DefaultScheduleData.initialSchedules().associateBy { it.date }
             saveSchedulesMap(defaults)
-            return defaults
-        }
-        return try {
-            val type = object : TypeToken<List<DaySchedule>>() {}.type
-            val list: List<DaySchedule> = gson.fromJson(raw, type) ?: emptyList()
-            if (list.isEmpty()) {
-                val defaults = DefaultScheduleData.initialSchedules().associateBy { it.date }
-                saveSchedulesMap(defaults)
-                defaults
-            } else {
-                list.associateBy { it.date }
+            defaults
+        } else {
+            try {
+                val type = object : TypeToken<List<DaySchedule>>() {}.type
+                val list: List<DaySchedule> = gson.fromJson(raw, type) ?: emptyList()
+                if (list.isEmpty()) {
+                    val defaults = DefaultScheduleData.initialSchedules().associateBy { it.date }
+                    saveSchedulesMap(defaults)
+                    defaults
+                } else {
+                    list.associateBy { it.date }
+                }
+            } catch (_: Exception) {
+                DefaultScheduleData.initialSchedules().associateBy { it.date }
             }
-        } catch (_: Exception) {
-            DefaultScheduleData.initialSchedules().associateBy { it.date }
         }
+        cachedSchedules = loaded
+        return loaded
     }
 
     fun saveSchedulesMap(map: Map<String, DaySchedule>) {
-        val sorted = map.values.sortedBy { it.date }
-        prefs.edit().putString(KEY_SCHEDULES, gson.toJson(sorted)).apply()
+        val sortedMap = map.toSortedMap()
+        cachedSchedules = sortedMap
+        prefs.edit().putString(KEY_SCHEDULES, gson.toJson(sortedMap.values.toList())).apply()
     }
 
     fun upsertSchedules(items: List<DaySchedule>) {
@@ -114,7 +127,6 @@ class ScheduleRepository(context: Context) {
                     val kip = daySchedule.kipFor(type)
                     val remaining = Duration.between(now, end).seconds.coerceAtLeast(0)
                     val total = Duration.between(start, end).seconds.coerceAtLeast(1)
-                    // Prefer per-day/per-shift custom crew list if entered, fallback to Kíp default crew
                     val members = daySchedule.customMembersFor(type)
                         .ifBlank { settings.kipMembers[kip].orEmpty() }
                     return ActiveShiftInfo(
@@ -142,11 +154,10 @@ class ScheduleRepository(context: Context) {
         val schedules = getAllSchedules()
         val result = mutableListOf<UpcomingShiftInfo>()
 
-        val sortedDates = schedules.keys.sorted()
-        for (dateStr in sortedDates) {
+        val minDateStr = from.toLocalDate().minusDays(1).toString()
+        for ((dateStr, daySchedule) in schedules) {
+            if (dateStr < minDateStr) continue
             val d = try { LocalDate.parse(dateStr) } catch (_: Exception) { continue }
-            if (d.isBefore(from.toLocalDate().minusDays(1))) continue
-            val daySchedule = schedules[dateStr] ?: continue
             for (type in ShiftType.entries) {
                 if (daySchedule.kipFor(type).equals(kip, ignoreCase = true)) {
                     val (start, end) = computeShiftWindow(d, type, settings)
@@ -177,6 +188,12 @@ class ScheduleRepository(context: Context) {
         private const val PREFS_NAME = "truc_ca_prefs"
         private const val KEY_SETTINGS = "app_settings"
         private const val KEY_SCHEDULES = "day_schedules"
+
+        @Volatile
+        private var cachedSettings: AppSettings? = null
+
+        @Volatile
+        private var cachedSchedules: Map<String, DaySchedule>? = null
 
         fun formatCountdown(totalSeconds: Long): String {
             val safe = totalSeconds.coerceAtLeast(0)

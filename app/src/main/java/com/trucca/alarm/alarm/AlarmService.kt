@@ -118,6 +118,7 @@ class AlarmService : Service() {
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)
             .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
@@ -169,8 +170,7 @@ class AlarmService : Service() {
                 @Suppress("DEPRECATION")
                 getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            val pattern = longArrayOf(0, 700, 500)
-            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 0))
         } catch (_: Exception) {
         }
     }

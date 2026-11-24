@@ -8,12 +8,6 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.trucca.alarm.MainActivity
 
-/**
- * Fires standard, non-ongoing high-priority notifications tailored for
- * Huawei Health (Huawei Sức khỏe) notification mirroring to Huawei Watch GT 6 Pro.
- * Foreground-service / ongoing notifications are often filtered out by wearable apps,
- * so this separate channel ensures reliable wrist vibration and alert display.
- */
 object WatchNotifier {
 
     const val WATCH_CHANNEL_ID = "trucca_huawei_watch_channel"
@@ -32,19 +26,13 @@ object WatchNotifier {
         nm.createNotificationChannel(channel)
     }
 
-    fun sendWatchAlert(
-        context: Context,
-        title: String,
-        body: String,
-        notificationId: Int
-    ) {
+    fun sendWatchAlert(context: Context, title: String, body: String, notificationId: Int) {
         ensureChannel(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val openIntent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context,
             notificationId,
-            openIntent,
+            Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -64,11 +52,16 @@ object WatchNotifier {
         nm.notify(notificationId, notification)
     }
 
-    fun sendTestWatchNotification(context: Context, selectedKip: String) {
+    fun sendTestWatchNotification(context: Context, selectedKip: String, members: String) {
+        val body = buildString {
+            append("Nếu đồng hồ Huawei GT 6 Pro vừa rung, kết nối đã thành công!")
+            if (members.isNotBlank()) append("
+Trực cùng: $members")
+        }
         sendWatchAlert(
             context = context,
-            title = "Kiểm tra kết nối Huawei Watch • Kíp $selectedKip",
-            body = "Nếu đồng hồ Huawei GT 6 Pro vừa rung, thông báo báo thức trực ca đã liên kết thành công!",
+            title = "Kiểm tra Huawei Watch • Kíp $selectedKip",
+            body = body,
             notificationId = (System.currentTimeMillis() % 100000).toInt() + 8000
         )
     }
