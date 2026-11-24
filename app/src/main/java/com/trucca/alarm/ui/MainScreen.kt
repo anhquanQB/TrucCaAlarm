@@ -1,5 +1,11 @@
 package com.trucca.alarm.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,6 +63,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -103,6 +111,8 @@ fun MainScreen(
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var schedulesVersion by remember { mutableIntStateOf(0) }
     var infoDialogData by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var weatherInfo by remember { mutableStateOf<WeatherInfo?>(null) }
+    LaunchedEffect(Unit) { weatherInfo = fetchQuangTrachWeather() }
     val showInfo: (String, String) -> Unit = { t, m -> infoDialogData = t to m }
 
     // Lightweight 1-second ticker reading from in-memory cached repository
@@ -121,6 +131,7 @@ fun MainScreen(
     }
 
     LiquidGlassBackdrop {
+        WeatherAtmosphereOverlay(weather = weatherInfo)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -181,28 +192,34 @@ fun MainScreen(
         }
 
         infoDialogData?.let { (infoTitle, infoBody) ->
-            AlertDialog(
-                onDismissRequest = { infoDialogData = null },
-                confirmButton = {
-                    TextButton(onClick = { infoDialogData = null }) { Text("Đã hiểu") }
-                },
-                title = { Text(infoTitle) },
-                text = { Text(infoBody) }
-            )
+            BouncyGlassDialog(onDismissRequest = { infoDialogData = null }) {
+                val p = LocalGlassPalette.current
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(infoTitle, color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(infoBody, color = p.mutedText, fontSize = 14.sp, lineHeight = 20.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { infoDialogData = null }) {
+                            Text("Đã hiểu", color = p.accent, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
 
         if (!statusMessage.isNullOrBlank()) {
-            AlertDialog(
-                onDismissRequest = onClearStatus,
-                confirmButton = {
-                    TextButton(onClick = {
-                        schedulesVersion++
-                        onClearStatus()
-                    }) { Text("Đóng") }
-                },
-                title = { Text("Thông báo") },
-                text = { Text(statusMessage) }
-            )
+            BouncyGlassDialog(onDismissRequest = onClearStatus) {
+                val p = LocalGlassPalette.current
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Thông báo", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(statusMessage, color = p.mutedText, fontSize = 14.sp, lineHeight = 20.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = {
+                            schedulesVersion++
+                            onClearStatus()
+                        }) { Text("Đóng", color = p.accent, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
         }
     }
 }
@@ -263,10 +280,30 @@ private fun GlassNavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pillColor = if (selected) accent.copy(alpha = 0.26f) else Color.Transparent
-    val contentColor = if (selected) Color.White else Color(0xFF94A3B8)
+    val pillColor by animateColorAsState(
+        targetValue = if (selected) accent.copy(alpha = 0.28f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_bg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) Color.White else Color(0xFF94A3B8),
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nav_fg"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.06f else 0.96f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "nav_scale"
+    )
     Column(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clip(RoundedCornerShape(20.dp))
             .background(pillColor)
             .clickable(onClick = onClick)
@@ -295,6 +332,16 @@ private fun HomeTab(
     val p = LocalGlassPalette.current
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
+    var kipExpanded by remember { mutableStateOf(false) }
+
+    val islandCorner by animateDpAsState(
+        targetValue = if (kipExpanded) 24.dp else 16.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "island_corner"
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -302,37 +349,105 @@ private fun HomeTab(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    ),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column {
-                    Text(
-                        text = "Lịch Trực Ca",
-                        color = p.softWhite,
-                        fontSize = 23.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${vietnameseWeekday(now.dayOfWeek)}, ${now.format(dateFmt)} ${LunarCalendarUtil.fromSolar(now.toLocalDate()).fullTag()} • ${now.format(timeFmt)}",
-                        color = p.mutedText,
-                        fontSize = 13.sp
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(p.highlightYellow.copy(alpha = 0.16f))
-                        .border(1.dp, p.highlightYellow.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Kíp tôi: ${settings.selectedKip}",
-                        color = p.highlightYellow,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Lịch Trực Ca",
+                            color = p.softWhite,
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${vietnameseWeekday(now.dayOfWeek)}, ${now.format(dateFmt)} ${LunarCalendarUtil.fromSolar(now.toLocalDate()).fullTag()} • ${now.format(timeFmt)}",
+                            color = p.mutedText,
+                            fontSize = 12.sp
+                        )
+                    }
+                    // Dynamic Island Morphing Pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(islandCorner))
+                            .background(
+                                if (kipExpanded) p.highlightYellow.copy(alpha = 0.26f)
+                                else p.highlightYellow.copy(alpha = 0.16f)
+                            )
+                            .border(
+                                1.2.dp,
+                                p.highlightYellow.copy(alpha = if (kipExpanded) 0.9f else 0.65f),
+                                RoundedCornerShape(islandCorner)
+                            )
+                            .clickable { kipExpanded = !kipExpanded }
+                            .padding(horizontal = 13.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            text = if (kipExpanded) "Chọn Kíp ▴" else "Kíp tôi: ${settings.selectedKip} ▾",
+                            color = p.highlightYellow,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
+                if (kipExpanded) {
+                    GlassPanel(
+                        modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = islandCorner,
+                        alphaBoost = 0.06f
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            DefaultScheduleData.ALL_KIPS.forEach { kip ->
+                                val isSelected = kip == settings.selectedKip
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(
+                                            if (isSelected) p.highlightYellow
+                                            else Color.White.copy(alpha = 0.09f)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) p.highlightYellow else Color.White.copy(alpha = 0.22f),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable {
+                                            kipExpanded = false
+                                            onSelectKip(kip)
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Kíp $kip",
+                                        color = if (isSelected) Color(0xFF0F172A) else p.softWhite,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -342,49 +457,7 @@ private fun HomeTab(
             ActiveShiftHeroCard(activeShift = activeShift, settings = settings)
         }
 
-        // Quick Kíp switcher
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Chọn Kíp trực của bạn",
-                    color = p.mutedText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    DefaultScheduleData.ALL_KIPS.forEach { kip ->
-                        val isSelected = kip == settings.selectedKip
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(
-                                    if (isSelected) p.highlightYellow
-                                    else Color.White.copy(alpha = 0.08f)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) p.highlightYellow else Color.White.copy(alpha = 0.22f),
-                                    RoundedCornerShape(16.dp)
-                                )
-                                .clickable { onSelectKip(kip) }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Kíp $kip",
-                                color = if (isSelected) Color(0xFF0F172A) else p.softWhite,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
+
 
         item {
             MyShiftCountdownCard(
@@ -559,7 +632,17 @@ private fun MyShiftCountdownCard(
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
-    GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
+    GlassPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ),
+        cornerRadius = 22.dp
+    ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -824,73 +907,77 @@ private fun EditDayDialog(
     var afternoonMembers by remember { mutableStateOf(day.afternoonMembers) }
     var nightMembers by remember { mutableStateOf(day.nightMembers) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sửa ca & người trực (${day.date})") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Để trống ô tên người trực nếu muốn dùng danh sách mặc định của Kíp.",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
-                )
-                OutlinedTextField(
-                    value = morning,
-                    onValueChange = { morning = it.uppercase().take(3) },
-                    label = { Text("Kíp Ca sáng (A/B/C/D/E)") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = morningMembers,
-                    onValueChange = { morningMembers = it },
-                    label = { Text("Người đi Ca sáng (tùy chọn)") },
-                    maxLines = 2
-                )
-                OutlinedTextField(
-                    value = afternoon,
-                    onValueChange = { afternoon = it.uppercase().take(3) },
-                    label = { Text("Kíp Ca chiều (A/B/C/D/E)") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = afternoonMembers,
-                    onValueChange = { afternoonMembers = it },
-                    label = { Text("Người đi Ca chiều (tùy chọn)") },
-                    maxLines = 2
-                )
-                OutlinedTextField(
-                    value = night,
-                    onValueChange = { night = it.uppercase().take(3) },
-                    label = { Text("Kíp Ca đêm (A/B/C/D/E)") },
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = nightMembers,
-                    onValueChange = { nightMembers = it },
-                    label = { Text("Người đi Ca đêm (tùy chọn)") },
-                    maxLines = 2
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onSave(
-                    day.copy(
-                        morningKip = morning.trim(),
-                        afternoonKip = afternoon.trim(),
-                        nightKip = night.trim(),
-                        morningMembers = morningMembers.trim(),
-                        afternoonMembers = afternoonMembers.trim(),
-                        nightMembers = nightMembers.trim()
+    BouncyGlassDialog(onDismissRequest = onDismiss) {
+        val p = LocalGlassPalette.current
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Sửa ca & người trực (${day.date})", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Để trống ô tên người trực nếu muốn dùng danh sách mặc định của Kíp.",
+                color = p.mutedText,
+                fontSize = 12.sp
+            )
+            OutlinedTextField(
+                value = morning,
+                onValueChange = { morning = it.uppercase().take(3) },
+                label = { Text("Kíp Ca Sáng (A/B/C/D/E)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = morningMembers,
+                onValueChange = { morningMembers = it },
+                label = { Text("Người đi Ca Sáng (tùy chọn)") },
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = afternoon,
+                onValueChange = { afternoon = it.uppercase().take(3) },
+                label = { Text("Kíp Ca Chiều (A/B/C/D/E)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = afternoonMembers,
+                onValueChange = { afternoonMembers = it },
+                label = { Text("Người đi Ca Chiều (tùy chọn)") },
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = night,
+                onValueChange = { night = it.uppercase().take(3) },
+                label = { Text("Kíp Ca Khuya (A/B/C/D/E)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = nightMembers,
+                onValueChange = { nightMembers = it },
+                label = { Text("Người đi Ca Khuya (tùy chọn)") },
+                maxLines = 2,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Hủy", color = p.mutedText) }
+                TextButton(onClick = {
+                    onSave(
+                        day.copy(
+                            morningKip = morning.trim(),
+                            afternoonKip = afternoon.trim(),
+                            nightKip = night.trim(),
+                            morningMembers = morningMembers.trim(),
+                            afternoonMembers = afternoonMembers.trim(),
+                            nightMembers = nightMembers.trim()
+                        )
                     )
-                )
-            }) { Text("Lưu") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy") } }
-    )
+                }) { Text("Lưu", color = p.accent, fontWeight = FontWeight.Bold) }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1050,18 +1137,21 @@ private fun SettingsTab(
     val p = LocalGlassPalette.current
     var alarmEnabled by remember(settings) { mutableStateOf(settings.alarmEnabled) }
     var watchSyncEnabled by remember(settings) { mutableStateOf(settings.watchSyncEnabled) }
-    var watchRepeatCount by remember(settings) { mutableIntStateOf(settings.watchRepeatCount) }
     var morningBefore by remember(settings) { mutableStateOf(settings.morningAlarmBeforeMin.toString()) }
     var afternoonBefore by remember(settings) { mutableStateOf(settings.afternoonAlarmBeforeMin.toString()) }
     var nightBefore by remember(settings) { mutableStateOf(settings.nightAlarmBeforeMin.toString()) }
     var membersMap by remember(settings) { mutableStateOf(settings.kipMembers.toMutableMap()) }
     var selectedTheme by remember(settings) { mutableStateOf(settings.resolvedTheme()) }
 
+    var showThemePopup by remember { mutableStateOf(false) }
+    var showAlarmPopup by remember { mutableStateOf(false) }
+    var showWatchPopup by remember { mutableStateOf(false) }
+    var showCrewPopup by remember { mutableStateOf(false) }
+
     fun buildUpdatedSettings(themeOverride: GlassThemeId = selectedTheme): AppSettings = settings.copy(
         themeId = themeOverride.name,
         alarmEnabled = alarmEnabled,
         watchSyncEnabled = watchSyncEnabled,
-        watchRepeatCount = watchRepeatCount,
         morningAlarmBeforeMin = morningBefore.toIntOrNull() ?: 60,
         afternoonAlarmBeforeMin = afternoonBefore.toIntOrNull() ?: 60,
         nightAlarmBeforeMin = nightBefore.toIntOrNull() ?: 60,
@@ -1071,229 +1161,376 @@ private fun SettingsTab(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Giao diện, Báo thức & Đồng hồ", color = p.softWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Cài đặt",
+                color = p.softWhite,
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Chạm vào từng mục để tùy chỉnh nhanh",
+                color = p.mutedText,
+                fontSize = 12.sp
+            )
         }
 
-        // Theme color picker (Liquid Glass)
+        // 1. Compact Theme Card
         item {
-            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Màu ánh phản chiếu (Liquid Glass)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        InfoHintButton(
-                            title = "Màu ánh phản chiếu",
-                            message = "Chạm để đổi màu ánh sáng phản chiếu trên các tấm kính trong suốt ngay lập tức.",
-                            onShowInfo = onShowInfo
+            val tp = paletteFor(selectedTheme)
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showThemePopup = true },
+                cornerRadius = 22.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Màu ánh phản chiếu", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(Brush.linearGradient(listOf(tp.heroStart, tp.accent)))
+                            )
+                            Text("${selectedTheme.label} ▾", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    InfoHintButton(
+                        title = "Màu ánh phản chiếu",
+                        message = "Chạm vào thẻ để mở bảng 6 màu ánh sáng phản chiếu trên các tấm kính trong suốt.",
+                        onShowInfo = onShowInfo
+                    )
+                }
+            }
+        }
+
+        // 2. Compact Alarm Card
+        item {
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showAlarmPopup = true },
+                cornerRadius = 22.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Báo thức Kíp ${settings.selectedKip}", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            InfoHintButton(
+                                title = "Báo thức tự động",
+                                message = "Chạm vào thẻ để đặt số phút báo trước từng ca và thử chuông. Chuông kêu có xác nhận 3 đợt (10 phút rồi 5 phút).",
+                                onShowInfo = onShowInfo
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sáng ${settings.morningAlarmBeforeMin}p • Chiều ${settings.afternoonAlarmBeforeMin}p • Khuya ${settings.nightAlarmBeforeMin}p ▾",
+                            color = p.mutedText,
+                            fontSize = 13.sp
                         )
                     }
+                    Switch(
+                        checked = alarmEnabled,
+                        onCheckedChange = {
+                            alarmEnabled = it
+                            onSave(buildUpdatedSettings())
+                        }
+                    )
+                }
+            }
+        }
 
-                    val themes = GlassThemeId.entries
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        themes.chunked(3).forEach { rowItems ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowItems.forEach { t ->
-                                    val tp = paletteFor(t)
-                                    val active = t == selectedTheme
-                                    Row(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(if (active) tp.heroStart.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f))
-                                            .border(
-                                                width = if (active) 1.5.dp else 1.dp,
-                                                color = if (active) tp.accent else Color.White.copy(alpha = 0.16f),
-                                                shape = RoundedCornerShape(14.dp)
-                                            )
-                                            .clickable {
-                                                selectedTheme = t
-                                                onSave(buildUpdatedSettings(themeOverride = t))
-                                            }
-                                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(16.dp)
-                                                .clip(CircleShape)
-                                                .background(Brush.linearGradient(listOf(tp.heroStart, tp.accent))),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (active) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = t.label,
-                                            color = p.softWhite,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                                            maxLines = 1
+        // 3. Compact Huawei Watch GT 6 Pro Card
+        item {
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showWatchPopup = true },
+                cornerRadius = 22.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            InfoHintButton(
+                                title = "Liên kết Huawei Watch GT 6 Pro",
+                                message = "Mở Huawei Sức khỏe → Thiết bị → chọn Huawei Watch GT 6 Pro → Thông báo → bật 'Trực Ca & Báo Thức'. Chạm vào thẻ để gửi thông báo thử.",
+                                onShowInfo = onShowInfo
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (watchSyncEnabled) "Rung dồn dập mỗi 3 giây • Chạm để thử ▾" else "Đang tắt đẩy đồng hồ ▾",
+                            color = p.mutedText,
+                            fontSize = 13.sp
+                        )
+                    }
+                    Switch(
+                        checked = watchSyncEnabled,
+                        onCheckedChange = {
+                            watchSyncEnabled = it
+                            onSave(buildUpdatedSettings())
+                        }
+                    )
+                }
+            }
+        }
+
+        // 4. Compact Crew Card
+        item {
+            val currentCrew = membersMap[settings.selectedKip].orEmpty()
+            GlassPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showCrewPopup = true },
+                cornerRadius = 22.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Nhân sự mặc định (TC TĐĐK)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Kíp ${settings.selectedKip}: $currentCrew",
+                            color = p.mutedText,
+                            fontSize = 13.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    InfoHintButton(
+                        title = "Nhân sự mặc định",
+                        message = "Chạm vào thẻ để sửa danh sách thành viên 5 Kíp (A–E). Nếu cần đổi riêng cho 1 ngày cụ thể, hãy chạm vào ngày đó trong tab Lịch tháng.",
+                        onShowInfo = onShowInfo
+                    )
+                }
+            }
+        }
+    }
+
+    // Pop-up 1: Theme Picker (BouncyGlassDialog)
+    if (showThemePopup) {
+        BouncyGlassDialog(onDismissRequest = { showThemePopup = false }) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Chọn màu ánh phản chiếu", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassThemeId.entries.chunked(2).forEach { rowItems ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowItems.forEach { t ->
+                                val tp = paletteFor(t)
+                                val active = t == selectedTheme
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (active) tp.heroStart.copy(alpha = 0.32f) else Color.White.copy(alpha = 0.07f))
+                                        .border(
+                                            width = if (active) 1.5.dp else 1.dp,
+                                            color = if (active) tp.accent else Color.White.copy(alpha = 0.18f),
+                                            shape = RoundedCornerShape(14.dp)
                                         )
+                                        .clickable {
+                                            selectedTheme = t
+                                            onSave(buildUpdatedSettings(themeOverride = t))
+                                            showThemePopup = false
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(Brush.linearGradient(listOf(tp.heroStart, tp.accent))),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (active) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(t.label, color = p.softWhite, fontSize = 12.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
-
-        // Alarm card
-        item {
-            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("Bật báo thức Kíp ${settings.selectedKip}", color = p.softWhite, fontWeight = FontWeight.Bold)
-                            InfoHintButton(
-                                title = "Báo thức tự động",
-                                message = "Tự đặt chuông trước mỗi ca trực của bạn theo số phút đã nhập bên dưới. Khi kêu có xác nhận 3 đợt (cách 10 phút rồi 5 phút).",
-                                onShowInfo = onShowInfo
-                            )
-                        }
-                        Switch(
-                            checked = alarmEnabled,
-                            onCheckedChange = {
-                                alarmEnabled = it
-                                onSave(buildUpdatedSettings())
-                            }
-                        )
-                    }
-
-                    OutlinedTextField(
-                        value = morningBefore,
-                        onValueChange = { morningBefore = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text("Ca sáng (07:00) — báo trước (phút)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = afternoonBefore,
-                        onValueChange = { afternoonBefore = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text("Ca chiều (15:00) — báo trước (phút)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = nightBefore,
-                        onValueChange = { nightBefore = it.filter { ch -> ch.isDigit() }.take(3) },
-                        label = { Text("Ca đêm (23:00) — báo trước (phút)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { onSave(buildUpdatedSettings()) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("Lưu cài đặt") }
-                        OutlinedButton(
-                            onClick = onTestAlarm,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("Thử chuông") }
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { showThemePopup = false }) { Text("Đóng", color = p.accent) }
                 }
             }
         }
+    }
 
-        // Huawei Watch GT 6 Pro sync card
-        item {
-            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Liên kết Huawei Watch GT 6 Pro", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        InfoHintButton(
-                            title = "Liên kết Huawei Watch GT 6 Pro",
-                            message = "Mở Huawei Sức khỏe → Thiết bị → chọn Huawei Watch GT 6 Pro → Thông báo → bật 'Trực Ca & Báo Thức'. Khi báo thức kêu, đồng hồ sẽ rung dồn dập mỗi 2.5 giây đến khi bạn bấm tắt.",
-                            onShowInfo = onShowInfo
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Rung dồn dập sang đồng hồ khi báo thức", color = p.softWhite, fontWeight = FontWeight.Medium, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = watchSyncEnabled,
-                            onCheckedChange = {
-                                watchSyncEnabled = it
-                                onSave(buildUpdatedSettings())
-                            }
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onTestWatchNotification,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Gửi thông báo thử sang đồng hồ") }
-                }
-            }
-        }
-
-        // Default crew per Kíp
-        item {
-            GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 22.dp) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Nhân sự mặc định theo Kíp (TC TĐĐK)", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        InfoHintButton(
-                            title = "Nhân sự mặc định",
-                            message = "Đã nạp sẵn theo Phụ lục Tháng 11/2026. Chạm vào từng ngày ở tab Lịch tháng nếu muốn nhập riêng người trực cho ngày đó.",
-                            onShowInfo = onShowInfo
-                        )
-                    }
-
-                    DefaultScheduleData.ALL_KIPS.forEach { kip ->
-                        var text by remember(settings) { mutableStateOf(membersMap[kip].orEmpty()) }
-                        OutlinedTextField(
-                            value = text,
-                            onValueChange = {
-                                text = it
-                                membersMap[kip] = it
-                            },
-                            label = { Text("Thành viên Kíp $kip") },
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 2
-                        )
-                    }
-
+    // Pop-up 2: Alarm Lead Time & Test (BouncyGlassDialog)
+    if (showAlarmPopup) {
+        BouncyGlassDialog(onDismissRequest = { showAlarmPopup = false }) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Cài đặt Báo thức Kíp ${settings.selectedKip}", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = morningBefore,
+                    onValueChange = { morningBefore = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text("Ca Sáng (07:00) — báo trước (phút)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = afternoonBefore,
+                    onValueChange = { afternoonBefore = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text("Ca Chiều (15:00) — báo trước (phút)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = nightBefore,
+                    onValueChange = { nightBefore = it.filter { ch -> ch.isDigit() }.take(3) },
+                    label = { Text("Ca Khuya (23:00) — báo trước (phút)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
-                        onClick = { onSave(buildUpdatedSettings()) },
-                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onSave(buildUpdatedSettings())
+                            showAlarmPopup = false
+                        },
+                        modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
-                    ) { Text("Lưu danh sách nhân sự") }
+                    ) { Text("Lưu") }
+                    OutlinedButton(
+                        onClick = {
+                            showAlarmPopup = false
+                            onTestAlarm()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Thử chuông") }
                 }
+            }
+        }
+    }
+
+    // Pop-up 3: Huawei Watch Test & Guide (BouncyGlassDialog)
+    if (showWatchPopup) {
+        BouncyGlassDialog(onDismissRequest = { showWatchPopup = false }) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Khi báo thức kêu, ứng dụng đẩy rung dồn dập mỗi 3 giây sang đồng hồ cho tới khi bạn bấm Tắt báo thức hoặc Hủy.",
+                    color = p.mutedText,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Button(
+                    onClick = {
+                        showWatchPopup = false
+                        onTestWatchNotification()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("Gửi thông báo thử sang đồng hồ") }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { showWatchPopup = false }) { Text("Đóng", color = p.accent) }
+                }
+            }
+        }
+    }
+
+    // Pop-up 4: Default Crew Editor (BouncyGlassDialog)
+    if (showCrewPopup) {
+        BouncyGlassDialog(onDismissRequest = { showCrewPopup = false }) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Nhân sự mặc định (TC TĐĐK)", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                DefaultScheduleData.ALL_KIPS.forEach { kip ->
+                    var text by remember(settings) { mutableStateOf(membersMap[kip].orEmpty()) }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = {
+                            text = it
+                            membersMap[kip] = it
+                        },
+                        label = { Text("Thành viên Kíp $kip") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 2
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { showCrewPopup = false }) { Text("Hủy", color = p.mutedText) }
+                    TextButton(onClick = {
+                        onSave(buildUpdatedSettings())
+                        showCrewPopup = false
+                    }) { Text("Lưu danh sách", color = p.accent, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BouncyGlassDialog(
+    onDismissRequest: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        var visible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { visible = true }
+
+        val scale by animateFloatAsState(
+            targetValue = if (visible) 1f else 0.72f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            ),
+            label = "popup_scale"
+        )
+        val alpha by animateFloatAsState(
+            targetValue = if (visible) 1f else 0f,
+            animationSpec = spring(stiffness = Spring.StiffnessMedium),
+            label = "popup_alpha"
+        )
+
+        GlassPanel(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = alpha
+                },
+            cornerRadius = 26.dp,
+            alphaBoost = 0.08f
+        ) {
+            Box(modifier = Modifier.padding(20.dp)) {
+                content()
             }
         }
     }
