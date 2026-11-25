@@ -80,6 +80,8 @@ data class AppSettings(
     val afternoonAlarmBeforeMin: Int = 60,
     val nightAlarmBeforeMin: Int = 60,
     val watchSyncEnabled: Boolean = true,
+    val watchAutoCallEnabled: Boolean = true,
+    val watchCallNumber: String = "0974844351",
     val watchRepeatCount: Int = 6,
     val shiftTimeConfig: ShiftTimeConfig = ShiftTimeConfig(),
     val kipMembers: Map<String, String> = mapOf(
