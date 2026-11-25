@@ -67,8 +67,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
@@ -926,13 +929,43 @@ private fun CalendarTab(
         }
 
         val daysInMonth = (1..currentMonth.lengthOfMonth()).toList()
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val scrollMaskShape = RoundedCornerShape(
+            topStart = 14.dp,
+            topEnd = 14.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(scrollMaskShape)
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    val topFadePx = 28.dp.toPx()
+                    val bottomFadePx = 36.dp.toPx()
+                    val h = size.height
+                    if (h > topFadePx + bottomFadePx) {
+                        val topStop = (topFadePx / h).coerceIn(0.01f, 0.25f)
+                        val bottomStop = ((h - bottomFadePx) / h).coerceIn(0.75f, 0.99f)
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0.0f to Color.Transparent,
+                                topStop to Color.Black,
+                                bottomStop to Color.Black,
+                                1.0f to Color.Transparent
+                            ),
+                            blendMode = BlendMode.DstIn
+                        )
+                    }
+                }
+        ) {
             val dynamicBottomPadding = (maxHeight - 72.dp).coerceAtLeast(12.dp)
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(5.dp),
-                contentPadding = PaddingValues(top = 8.dp, bottom = dynamicBottomPadding)
+                contentPadding = PaddingValues(top = 12.dp, bottom = dynamicBottomPadding)
             ) {
             items(daysInMonth) { dayNum ->
                 val date = currentMonth.atDay(dayNum)
