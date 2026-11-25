@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -164,6 +165,7 @@ fun MainScreen(
                         repo = repo,
                         settings = settings,
                         schedulesVersion = schedulesVersion,
+                        isSelectedTab = pagerState.currentPage == 1,
                         onShowInfo = showInfo,
                         onDayEdited = { day ->
                             repo.saveDayExact(day)
@@ -792,15 +794,30 @@ private fun CalendarTab(
     repo: ScheduleRepository,
     settings: AppSettings,
     schedulesVersion: Int,
+    isSelectedTab: Boolean,
     onShowInfo: (String, String) -> Unit,
     onDayEdited: (DaySchedule) -> Unit
 ) {
     val p = LocalGlassPalette.current
-    var currentMonth by remember { mutableStateOf(YearMonth.of(2026, 11)) }
+    val today = LocalDate.now()
+    var currentMonth by remember { mutableStateOf(YearMonth.from(today)) }
+    val listState = rememberLazyListState()
     val monthSchedules = remember(currentMonth, schedulesVersion) {
         repo.getSchedulesForMonth(currentMonth).associateBy { it.date }
     }
     var editingDay by remember { mutableStateOf<DaySchedule?>(null) }
+
+    LaunchedEffect(isSelectedTab) {
+        if (isSelectedTab) {
+            val nowDate = LocalDate.now()
+            val targetMonth = YearMonth.from(nowDate)
+            if (currentMonth != targetMonth) {
+                currentMonth = targetMonth
+            }
+            val targetIndex = (nowDate.dayOfMonth - 1).coerceIn(0, targetMonth.lengthOfMonth() - 1)
+            listState.scrollToItem(index = targetIndex, scrollOffset = 0)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -849,6 +866,7 @@ private fun CalendarTab(
 
         val daysInMonth = (1..currentMonth.lengthOfMonth()).toList()
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(5.dp),
             contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp)
