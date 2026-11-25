@@ -1177,6 +1177,8 @@ private fun SettingsTab(
     val p = LocalGlassPalette.current
     var alarmEnabled by remember(settings) { mutableStateOf(settings.alarmEnabled) }
     var watchSyncEnabled by remember(settings) { mutableStateOf(settings.watchSyncEnabled) }
+    var watchAutoCallEnabled by remember(settings) { mutableStateOf(settings.watchAutoCallEnabled) }
+    var watchCallNumber by remember(settings) { mutableStateOf(settings.watchCallNumber) }
     var morningBefore by remember(settings) { mutableStateOf(settings.morningAlarmBeforeMin.toString()) }
     var afternoonBefore by remember(settings) { mutableStateOf(settings.afternoonAlarmBeforeMin.toString()) }
     var nightBefore by remember(settings) { mutableStateOf(settings.nightAlarmBeforeMin.toString()) }
@@ -1192,6 +1194,8 @@ private fun SettingsTab(
         themeId = themeOverride.name,
         alarmEnabled = alarmEnabled,
         watchSyncEnabled = watchSyncEnabled,
+        watchAutoCallEnabled = watchAutoCallEnabled,
+        watchCallNumber = watchCallNumber.trim().ifBlank { "0974844351" },
         morningAlarmBeforeMin = morningBefore.toIntOrNull() ?: 60,
         afternoonAlarmBeforeMin = afternoonBefore.toIntOrNull() ?: 60,
         nightAlarmBeforeMin = nightBefore.toIntOrNull() ?: 60,
@@ -1204,17 +1208,23 @@ private fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                text = "Cài đặt",
-                color = p.softWhite,
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Chạm vào từng mục để tùy chỉnh nhanh",
-                color = p.mutedText,
-                fontSize = 12.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cài đặt",
+                    color = p.softWhite,
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                InfoHintButton(
+                    title = "Hướng dẫn Cài đặt",
+                    message = "Chạm vào từng thẻ bên dưới để tùy chỉnh nhanh màu ánh phản chiếu, số phút báo thức, thử rung Huawei Watch hoặc sửa danh sách nhân sự.",
+                    onShowInfo = onShowInfo
+                )
+            }
         }
 
         // 1. Compact Theme Card
@@ -1323,7 +1333,12 @@ private fun SettingsTab(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (watchSyncEnabled) "Rung dồn dập • Chạm để thử ▾" else "Đang tắt đẩy đồng hồ ▾",
+                            text = if (watchSyncEnabled) {
+                                if (settings.watchAutoCallEnabled && settings.watchCallNumber.isNotBlank())
+                                    "Gọi rung ${settings.watchCallNumber} • Chạm để chỉnh ▾"
+                                else
+                                    "Đẩy thông báo đồng hồ • Chạm để chỉnh ▾"
+                            } else "Đang tắt đẩy đồng hồ ▾",
                             color = p.mutedText,
                             fontSize = 13.sp
                         )
@@ -1476,27 +1491,55 @@ private fun SettingsTab(
         }
     }
 
-    // Pop-up 3: Huawei Watch Test & Guide (BouncyGlassDialog)
+    // Pop-up 3: Huawei Watch Test, Auto-Call Phone Number & Guide (BouncyGlassDialog)
     if (showWatchPopup) {
         BouncyGlassDialog(onDismissRequest = { showWatchPopup = false }) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Khi báo thức kêu, ứng dụng đẩy tín hiệu rung dồn dập sang đồng hồ cho tới khi bạn bấm Tắt báo thức hoặc Hủy.",
-                    color = p.mutedText,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
-                )
-                Button(
-                    onClick = {
-                        showWatchPopup = false
-                        onTestWatchNotification()
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) { Text("Gửi thông báo thử sang đồng hồ") }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { showWatchPopup = false }) { Text("Đóng", color = p.accent) }
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Tự động gọi điện để rung liên hồi",
+                        color = p.softWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = watchAutoCallEnabled,
+                        onCheckedChange = { watchAutoCallEnabled = it }
+                    )
+                }
+                OutlinedTextField(
+                    value = watchCallNumber,
+                    onValueChange = { watchCallNumber = it.filter { ch -> ch.isDigit() || ch == '+' }.take(15) },
+                    label = { Text("Số điện thoại gọi tới đồng hồ") },
+                    placeholder = { Text("0974844351") },
+                    singleLine = true,
+                    enabled = watchAutoCallEnabled,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            onSave(buildUpdatedSettings())
+                            showWatchPopup = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Lưu") }
+                    OutlinedButton(
+                        onClick = {
+                            onSave(buildUpdatedSettings())
+                            showWatchPopup = false
+                            onTestWatchNotification()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Thử đồng hồ") }
                 }
             }
         }
