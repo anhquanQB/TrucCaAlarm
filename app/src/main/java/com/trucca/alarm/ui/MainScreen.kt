@@ -966,8 +966,8 @@ private fun CalendarTab(
                 .softVerticalFade(
                     showTopFade = listState.canScrollBackward,
                     showBottomFade = listState.canScrollForward,
-                    topFade = 28.dp,
-                    bottomFade = 36.dp
+                    topFade = 32.dp,
+                    bottomFade = 32.dp
                 )
         ) {
             val dynamicBottomPadding = (maxHeight - 72.dp).coerceAtLeast(12.dp)
@@ -2341,7 +2341,7 @@ private fun Modifier.softVerticalFade(
     showTopFade: Boolean = true,
     showBottomFade: Boolean = true,
     topFade: Dp = 24.dp,
-    bottomFade: Dp = 32.dp
+    bottomFade: Dp = 28.dp
 ): Modifier = this
     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
     .drawWithContent {
@@ -2350,8 +2350,8 @@ private fun Modifier.softVerticalFade(
         val topPx = if (showTopFade) topFade.toPx() else 0f
         val bottomPx = if (showBottomFade) bottomFade.toPx() else 0f
         if (h > topPx + bottomPx && (topPx > 0f || bottomPx > 0f)) {
-            val topStop = (topPx / h).coerceIn(0f, 0.25f)
-            val bottomStop = ((h - bottomPx) / h).coerceIn(0.75f, 1f)
+            val topStop = (topPx / h).coerceIn(0f, 0.30f)
+            val bottomStop = ((h - bottomPx) / h).coerceIn(0.70f, 1f)
             val stops = buildList {
                 if (topPx > 0f) {
                     add(0.0f to Color.Transparent)
