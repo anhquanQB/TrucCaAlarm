@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -181,9 +182,21 @@ fun MainScreen(
                             onSchedulesUpdated()
                         },
                         onSwapApplied = { updatedDays ->
-                            repo.upsertSchedules(updatedDays)
+                            repo.applySwapSchedules(updatedDays)
                             schedulesVersion++
                             onSchedulesUpdated()
+                        },
+                        onUndoLastSwap = {
+                            if (repo.undoLastSwap()) {
+                                schedulesVersion++
+                                onSchedulesUpdated()
+                            }
+                        },
+                        onRestoreOriginal = {
+                            if (repo.restoreOriginalSchedule()) {
+                                schedulesVersion++
+                                onSchedulesUpdated()
+                            }
                         }
                     )
                     2 -> ImportTab(
@@ -369,8 +382,17 @@ private fun HomeTab(
         label = "island_corner"
     )
 
+    val homeListState = rememberLazyListState()
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = homeListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .softVerticalFade(
+                showTopFade = homeListState.canScrollBackward,
+                showBottomFade = homeListState.canScrollForward,
+                topFade = 24.dp,
+                bottomFade = 32.dp
+            ),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -810,7 +832,9 @@ private fun CalendarTab(
     isSelectedTab: Boolean,
     onShowInfo: (String, String) -> Unit,
     onDayEdited: (DaySchedule) -> Unit,
-    onSwapApplied: (List<DaySchedule>) -> Unit
+    onSwapApplied: (List<DaySchedule>) -> Unit,
+    onUndoLastSwap: () -> Unit,
+    onRestoreOriginal: () -> Unit
 ) {
     val p = LocalGlassPalette.current
     val today = LocalDate.now()
@@ -939,26 +963,12 @@ private fun CalendarTab(
             modifier = Modifier
                 .fillMaxSize()
                 .clip(scrollMaskShape)
-                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                .drawWithContent {
-                    drawContent()
-                    val topFadePx = 28.dp.toPx()
-                    val bottomFadePx = 36.dp.toPx()
-                    val h = size.height
-                    if (h > topFadePx + bottomFadePx) {
-                        val topStop = (topFadePx / h).coerceIn(0.01f, 0.25f)
-                        val bottomStop = ((h - bottomFadePx) / h).coerceIn(0.75f, 0.99f)
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0.0f to Color.Transparent,
-                                topStop to Color.Black,
-                                bottomStop to Color.Black,
-                                1.0f to Color.Transparent
-                            ),
-                            blendMode = BlendMode.DstIn
-                        )
-                    }
-                }
+                .softVerticalFade(
+                    showTopFade = listState.canScrollBackward,
+                    showBottomFade = listState.canScrollForward,
+                    topFade = 28.dp,
+                    bottomFade = 36.dp
+                )
         ) {
             val dynamicBottomPadding = (maxHeight - 72.dp).coerceAtLeast(12.dp)
             LazyColumn(
@@ -1055,6 +1065,14 @@ private fun CalendarTab(
             onApplySwap = { updatedDays ->
                 onSwapApplied(updatedDays)
                 showSwapDialog = false
+            },
+            onUndoLastSwap = {
+                onUndoLastSwap()
+                showSwapDialog = false
+            },
+            onRestoreOriginal = {
+                onRestoreOriginal()
+                showSwapDialog = false
             }
         )
     }
@@ -1117,8 +1135,16 @@ private fun EditDayDialog(
 
     BouncyGlassDialog(onDismissRequest = onDismiss) {
         val p = LocalGlassPalette.current
+        val editScroll = rememberScrollState()
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .softVerticalFade(
+                    showTopFade = editScroll.value > 0,
+                    showBottomFade = editScroll.value < editScroll.maxValue,
+                    topFade = 24.dp,
+                    bottomFade = 28.dp
+                )
+                .verticalScroll(editScroll),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Sửa ca & người trực (${day.date})", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1203,7 +1229,9 @@ private fun ShiftSwapDialog(
     settings: AppSettings,
     initialDate: LocalDate,
     onDismiss: () -> Unit,
-    onApplySwap: (List<DaySchedule>) -> Unit
+    onApplySwap: (List<DaySchedule>) -> Unit,
+    onUndoLastSwap: () -> Unit,
+    onRestoreOriginal: () -> Unit
 ) {
     val p = LocalGlassPalette.current
     val allSchedules = remember { repo.getAllSchedules() }
@@ -1257,10 +1285,17 @@ private fun ShiftSwapDialog(
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
 
     BouncyGlassDialog(onDismissRequest = onDismiss) {
+        val swapScroll = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .softVerticalFade(
+                    showTopFade = swapScroll.value > 0,
+                    showBottomFade = swapScroll.value < swapScroll.maxValue,
+                    topFade = 24.dp,
+                    bottomFade = 28.dp
+                )
+                .verticalScroll(swapScroll),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
@@ -1524,6 +1559,44 @@ private fun ShiftSwapDialog(
                 }
             }
 
+            val canUndo = remember { repo.hasSwapBackup() }
+            var confirmResetOriginal by remember { mutableStateOf(false) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (canUndo) {
+                    OutlinedButton(
+                        onClick = onUndoLastSwap,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        Text("Hoàn tác", color = p.highlightYellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (confirmResetOriginal) {
+                            onRestoreOriginal()
+                        } else {
+                            confirmResetOriginal = true
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = if (confirmResetOriginal) "Xác nhận về gốc?" else "Khôi phục lịch gốc",
+                        color = if (confirmResetOriginal) Color(0xFFFCA5A5) else p.softWhite,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Đóng", color = p.accent) }
             }
@@ -1541,9 +1614,18 @@ private fun ImportTab(
     val p = LocalGlassPalette.current
     var targetMonth by remember { mutableStateOf(YearMonth.now()) }
     var cycleOffset by remember { mutableIntStateOf(0) }
+    val importListState = rememberLazyListState()
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = importListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .softVerticalFade(
+                showTopFade = importListState.canScrollBackward,
+                showBottomFade = importListState.canScrollForward,
+                topFade = 24.dp,
+                bottomFade = 32.dp
+            ),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -1718,8 +1800,17 @@ private fun SettingsTab(
         kipMembers = membersMap.toMap()
     )
 
+    val settingsListState = rememberLazyListState()
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = settingsListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .softVerticalFade(
+                showTopFade = settingsListState.canScrollBackward,
+                showBottomFade = settingsListState.canScrollForward,
+                topFade = 24.dp,
+                bottomFade = 32.dp
+            ),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -2098,8 +2189,16 @@ private fun SettingsTab(
     // Pop-up 4: Default Crew Editor (BouncyGlassDialog)
     if (showCrewPopup) {
         BouncyGlassDialog(onDismissRequest = { showCrewPopup = false }) {
+            val crewScroll = rememberScrollState()
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .softVerticalFade(
+                        showTopFade = crewScroll.value > 0,
+                        showBottomFade = crewScroll.value < crewScroll.maxValue,
+                        topFade = 24.dp,
+                        bottomFade = 28.dp
+                    )
+                    .verticalScroll(crewScroll),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Nhân sự mặc định (TC TĐĐK)", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -2237,3 +2336,39 @@ private fun vietnameseShortWeekday(dayOfWeek: DayOfWeek): String = when (dayOfWe
     DayOfWeek.SATURDAY -> "T7"
     DayOfWeek.SUNDAY -> "CN"
 }
+
+private fun Modifier.softVerticalFade(
+    showTopFade: Boolean = true,
+    showBottomFade: Boolean = true,
+    topFade: Dp = 24.dp,
+    bottomFade: Dp = 32.dp
+): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithContent {
+        drawContent()
+        val h = size.height
+        val topPx = if (showTopFade) topFade.toPx() else 0f
+        val bottomPx = if (showBottomFade) bottomFade.toPx() else 0f
+        if (h > topPx + bottomPx && (topPx > 0f || bottomPx > 0f)) {
+            val topStop = (topPx / h).coerceIn(0f, 0.25f)
+            val bottomStop = ((h - bottomPx) / h).coerceIn(0.75f, 1f)
+            val stops = buildList {
+                if (topPx > 0f) {
+                    add(0.0f to Color.Transparent)
+                    add(topStop to Color.Black)
+                } else {
+                    add(0.0f to Color.Black)
+                }
+                if (bottomPx > 0f) {
+                    add(bottomStop to Color.Black)
+                    add(1.0f to Color.Transparent)
+                } else {
+                    add(1.0f to Color.Black)
+                }
+            }.toTypedArray()
+            drawRect(
+                brush = Brush.verticalGradient(*stops),
+                blendMode = BlendMode.DstIn
+            )
+        }
+    }
