@@ -19,8 +19,10 @@ import android.os.VibrationEffect
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.telecom.TelecomManager
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.trucca.alarm.data.ScheduleRepository
@@ -69,10 +71,28 @@ class AlarmService : Service() {
                 activeStage = intent?.getIntExtra(EXTRA_STAGE, 1) ?: 1
                 val watchBody = "$activeDetail • [Đợt $activeStage/3]"
                 val stopPending = buildStopStagePendingIntent()
-                startAlarmNotification(activeTitle, watchBody, activeStage, stopPending)
+                val settings = ScheduleRepository(this).getSettings()
+                val willAutoCall = settings.watchSyncEnabled &&
+                    settings.watchAutoCallEnabled &&
+                    settings.watchCallNumber.filter { it.isDigit() || it == '+' }.length >= 3 &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+
+                startAlarmNotification(
+                    title = activeTitle,
+                    detail = watchBody,
+                    stage = activeStage,
+                    stopPending = stopPending,
+                    launchActivityImmediately = !willAutoCall
+                )
                 startSoundAndVibration()
-                startWatchAlertBursts(activeTitle, watchBody, stopPending)
-                triggerWatchWakeCallIfEnabled()
+                if (willAutoCall) {
+                    // Uu tien goi dien ngay lap tuc de dong ho rung lien hoi nhu cuoc goi den
+                    watchHandler.postDelayed({ triggerWatchWakeCallIfEnabled() }, 350L)
+                    // Lui thong bao dong ho 25s de khong lan at cuoc goi den tren Huawei Health
+                    watchHandler.postDelayed({ startWatchAlertBursts(activeTitle, watchBody, stopPending) }, 25_000L)
+                } else {
+                    startWatchAlertBursts(activeTitle, watchBody, stopPending)
+                }
             }
         }
         return START_STICKY
@@ -152,7 +172,8 @@ class AlarmService : Service() {
         title: String,
         detail: String,
         stage: Int,
-        stopPending: PendingIntent
+        stopPending: PendingIntent,
+        launchActivityImmediately: Boolean = true
     ) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
@@ -205,9 +226,11 @@ class AlarmService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        try {
-            startActivity(fullScreenIntent)
-        } catch (_: Exception) {
+        if (launchActivityImmediately) {
+            try {
+                startActivity(fullScreenIntent)
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -223,95 +246,3 @@ class AlarmService : Service() {
             ) {
                 return
             }
-            val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$sanitized")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(callIntent)
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun startSoundAndVibration() {
-        try {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(this@AlarmService, uri)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = true
-                prepare()
-                start()
-            }
-        } catch (_: Exception) {
-        }
-
-        try {
-            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            }
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 300), 0))
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun stopAlarmAndSelf() {
-        watchRunnable?.let { watchHandler.removeCallbacks(it) }
-        watchRunnable = null
-        clearWatchNotifications()
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (_: Exception) {
-        }
-        mediaPlayer = null
-        try {
-            vibrator?.cancel()
-        } catch (_: Exception) {
-        }
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Exception) {
-        }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    }
-
-    override fun onDestroy() {
-        watchRunnable?.let { watchHandler.removeCallbacks(it) }
-        clearWatchNotifications()
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            vibrator?.cancel()
-        } catch (_: Exception) {
-        }
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Exception) {
-        }
-        super.onDestroy()
-    }
-
-    companion object {
-        const val CHANNEL_ID = "trucca_alarm_channel"
-        const val NOTIFICATION_ID = 7701
-        const val WATCH_ACTIVE_CALL_ID = 8899
-        const val ACTION_START = "com.trucca.alarm.START"
-        const val ACTION_STOP = "com.trucca.alarm.STOP"
-        const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
-        const val ACTION_SNOOZE = "com.trucca.alarm.SNOOZE"
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_DETAIL = "extra_detail"
-        const val EXTRA_STAGE = "extra_stage"
-    }
-}
