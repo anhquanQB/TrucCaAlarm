@@ -1,545 +1,253 @@
-package com.trucca.alarm.alarm
+package com.trucca.baothuc
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.MediaPlayer
-import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.telecom.TelecomManager
-import android.telephony.PhoneStateListener
-import android.telephony.TelephonyCallback
-import android.telephony.TelephonyManager
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import com.trucca.alarm.data.ScheduleRepository
 
 class AlarmService : Service() {
 
-    private var mediaPlayer: MediaPlayer? = null
+    companion object {
+        const val ACTION_START_1H = "com.trucca.baothuc.START_1H"
+        const val ACTION_SNOOZE_1MIN = "com.trucca.baothuc.SNOOZE_1MIN"
+        const val ACTION_CANCEL_1H = "com.trucca.baothuc.CANCEL_1H"
+        const val EXTRA_SHIFT_TITLE = "extra_shift_title"
+
+        private const val CHANNEL_ID = "watch_vib_1h"
+        private const val FG_ID = 2001
+        private const val PULSE_ID = 2002
+
+        private const val WINDOW_MS = 60L * 60L * 1000L
+        private const val SNOOZE_MS = 60L * 1000L
+        private const val PULSE_INTERVAL_MS = 2_200L
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
     private var vibrator: Vibrator? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private val watchHandler = Handler(Looper.getMainLooper())
-    private var watchRunnable: Runnable? = null
-    private var callFallbackRunnable: Runnable? = null
 
-    private var activeTitle: String = "Sắp vào ca trực!"
-    private var activeDetail: String = "Chuẩn bị đi làm."
-    private var activeStage: Int = 1
-    private var waitingForCallEnd: Boolean = false
-    private var sawCallActiveOrOffhook: Boolean = false
+    private var shiftTitle = "Ca Truc"
+    private var endTimeMs = 0L
+    private var sessionActive = false
+    private var vibActive = false
+    private var seq = 0
 
-    private var telephonyCallback: Any? = null
-    @Suppress("DEPRECATION")
-    private var legacyPhoneListener: PhoneStateListener? = null
+    private val pulseTask = object : Runnable {
+        override fun run() {
+            if (!sessionActive) return
+            if (System.currentTimeMillis() >= endTimeMs) {
+                stopAll()
+                return
+            }
+            if (!vibActive) return
+
+            seq++
+            vibrateNow()
+            pushWatchPulse(seq)
+            handler.postDelayed(this, PULSE_INTERVAL_MS)
+        }
+    }
+
+    private val resumeTask = Runnable {
+        if (!sessionActive) return@Runnable
+        if (System.currentTimeMillis() >= endTimeMs) {
+            stopAll()
+            return@Runnable
+        }
+        startVibCycle()
+    }
+
+    private val expireTask = Runnable { stopAll() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+        createChannel()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> {
-                stopCallWatcher()
-                watchRunnable?.let { watchHandler.removeCallbacks(it) }
-                watchRunnable = null
-                watchHandler.removeCallbacksAndMessages(null)
-                clearWatchNotifications()
-                val stageToFinish = intent.getIntExtra(EXTRA_STAGE, activeStage)
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
-                val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
-                when (stageToFinish) {
-                    1 -> ShiftAlarmScheduler.scheduleFollowUpStage(this, title, detail, nextStage = 2, delayMinutes = 10)
-                    2 -> ShiftAlarmScheduler.scheduleFollowUpStage(this, title, detail, nextStage = 3, delayMinutes = 5)
-                }
-                stopAlarmAndSelf()
-                return START_NOT_STICKY
+            ACTION_START_1H -> {
+                shiftTitle = intent.getStringExtra(EXTRA_SHIFT_TITLE)?.ifBlank { "Ca Truc" } ?: "Ca Truc"
+                startSession()
             }
-            ACTION_DISMISS_ALL -> {
-                stopCallWatcher()
-                watchRunnable?.let { watchHandler.removeCallbacks(it) }
-                watchRunnable = null
-                watchHandler.removeCallbacksAndMessages(null)
-                clearWatchNotifications()
-                stopAlarmAndSelf()
-                return START_NOT_STICKY
-            }
-            ACTION_SNOOZE -> {
-                stopCallWatcher()
-                watchRunnable?.let { watchHandler.removeCallbacks(it) }
-                watchRunnable = null
-                watchHandler.removeCallbacksAndMessages(null)
-                clearWatchNotifications()
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
-                val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
-                val stage = intent.getIntExtra(EXTRA_STAGE, activeStage)
-                ShiftAlarmScheduler.scheduleSnooze(this, title, detail, stage, 5)
-                stopAlarmAndSelf()
-                return START_NOT_STICKY
-            }
-            ACTION_SHOW_POPUP -> {
-                stopCallWatcher()
-                activeTitle = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
-                activeDetail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
-                activeStage = intent.getIntExtra(EXTRA_STAGE, activeStage)
-                val watchBody = "$activeDetail • [Đợt $activeStage.2/3]"
-                val stopPending = buildStopStagePendingIntent()
-                startAlarmNotification(
-                    title = activeTitle,
-                    detail = watchBody,
-                    stage = activeStage,
-                    stopPending = stopPending,
-                    launchActivityImmediately = true
-                )
-                startSoundAndVibration()
-                startWatchAlertBursts(activeTitle, watchBody, stopPending)
-            }
-            else -> {
-                stopCallWatcher()
-                activeTitle = intent?.getStringExtra(EXTRA_TITLE) ?: "Sắp vào ca trực!"
-                activeDetail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
-                activeStage = intent?.getIntExtra(EXTRA_STAGE, 1) ?: 1
-                val stopPending = buildStopStagePendingIntent()
-                val settings = ScheduleRepository(this).getSettings()
-                val willAutoCall = settings.watchSyncEnabled &&
-                    settings.watchAutoCallEnabled &&
-                    settings.watchCallNumber.filter { it.isDigit() || it == '+' }.length >= 3 &&
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-
-                if (willAutoCall) {
-                    // Dot X.1: Goi dien truoc, cho nguoi dung tat cuoc goi tren dong ho hoac dien thoai
-                    val callPhaseBody = "$activeDetail • [Đợt $activeStage.1/3 - Đang gọi]"
-                    startAlarmNotification(
-                        title = activeTitle,
-                        detail = callPhaseBody,
-                        stage = activeStage,
-                        stopPending = stopPending,
-                        launchActivityImmediately = false
-                    )
-                    startCallEndWatcher()
-                    watchHandler.postDelayed({ triggerWatchWakeCallIfEnabled() }, 350L)
-                } else {
-                    val watchBody = "$activeDetail • [Đợt $activeStage/3]"
-                    startAlarmNotification(
-                        title = activeTitle,
-                        detail = watchBody,
-                        stage = activeStage,
-                        stopPending = stopPending,
-                        launchActivityImmediately = true
-                    )
-                    startSoundAndVibration()
-                    startWatchAlertBursts(activeTitle, watchBody, stopPending)
-                }
-            }
+            ACTION_SNOOZE_1MIN -> snooze1Min()
+            ACTION_CANCEL_1H -> stopAll()
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
-    private fun transitionFromCallToPopup() {
-        if (!waitingForCallEnd) return
-        stopCallWatcher()
-        val popupIntent = Intent(this, AlarmService::class.java).apply {
-            action = ACTION_SHOW_POPUP
-            putExtra(EXTRA_TITLE, activeTitle)
-            putExtra(EXTRA_DETAIL, activeDetail)
-            putExtra(EXTRA_STAGE, activeStage)
-        }
-        startService(popupIntent)
+    private fun startSession() {
+        clearTimers()
+        val now = System.currentTimeMillis()
+        endTimeMs = now + WINDOW_MS
+        sessionActive = true
+        seq = 0
+
+        startForeground(FG_ID, buildFgNotif("Dang rung trong 1 gio"))
+        handler.postDelayed(expireTask, WINDOW_MS)
+        startVibCycle()
     }
 
-    private fun startCallEndWatcher() {
-        waitingForCallEnd = true
-        sawCallActiveOrOffhook = false
+    private fun startVibCycle() {
+        if (!sessionActive) return
+        handler.removeCallbacks(pulseTask)
+        vibActive = true
+        updateFgNotif("Dang rung lien tuc")
+        openPopup()
+        handler.post(pulseTask)
+    }
 
-        // Du phong toi da 70s neu nha mang tu ngat ma khong tra ve trang thai IDLE
-        val fallback = Runnable {
-            if (waitingForCallEnd) {
-                transitionFromCallToPopup()
-            }
-        }
-        callFallbackRunnable = fallback
-        watchHandler.postDelayed(fallback, 70_000L)
+    private fun snooze1Min() {
+        if (!sessionActive) return
+        clearTimers()
+        vibActive = false
+        vibrator?.cancel()
+        cancelPulseNotif()
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        val rem = endTimeMs - System.currentTimeMillis()
+        if (rem <= 0L) {
+            stopAll()
             return
         }
 
-        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                registerModernCallStateCallback(tm)
-            } else {
-                registerLegacyPhoneStateListener(tm)
-            }
-        } catch (_: Exception) {
-        }
+        updateFgNotif("Tam ngung 1 phut")
+        handler.postDelayed(expireTask, rem)
+        handler.postDelayed(resumeTask, minOf(SNOOZE_MS, rem))
     }
 
-    @RequiresApi(Build.VERSION_CODES.S)
-    private fun registerModernCallStateCallback(tm: TelephonyManager) {
-        val cb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
-            override fun onCallStateChanged(state: Int) {
-                handleCallStateChange(state)
-            }
-        }
-        telephonyCallback = cb
-        tm.registerTelephonyCallback(mainExecutor, cb)
-    }
-
-    @Suppress("DEPRECATION")
-    private fun registerLegacyPhoneStateListener(tm: TelephonyManager) {
-        val listener = object : PhoneStateListener() {
-            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                handleCallStateChange(state)
-            }
-        }
-        legacyPhoneListener = listener
-        tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
-    }
-
-    private fun handleCallStateChange(state: Int) {
-        if (!waitingForCallEnd) return
-        when (state) {
-            TelephonyManager.CALL_STATE_OFFHOOK,
-            TelephonyManager.CALL_STATE_RINGING -> {
-                sawCallActiveOrOffhook = true
-            }
-            TelephonyManager.CALL_STATE_IDLE -> {
-                if (sawCallActiveOrOffhook) {
-                    // Nguoi dung vua tat/tu choi cuoc goi tren dong ho hoac dien thoai -> bat ngay Dot X.2 (Pop-up)
-                    watchHandler.postDelayed({ transitionFromCallToPopup() }, 400L)
-                }
-            }
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun stopCallWatcher() {
-        waitingForCallEnd = false
-        sawCallActiveOrOffhook = false
-        callFallbackRunnable?.let { watchHandler.removeCallbacks(it) }
-        callFallbackRunnable = null
-        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                (telephonyCallback as? TelephonyCallback)?.let {
-                    tm.unregisterTelephonyCallback(it)
-                }
-                telephonyCallback = null
-            } else {
-                legacyPhoneListener?.let {
-                    tm.listen(it, PhoneStateListener.LISTEN_NONE)
-                }
-                legacyPhoneListener = null
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun buildStopStagePendingIntent(): PendingIntent {
-        val stopIntent = Intent(this, AlarmService::class.java).apply {
-            action = ACTION_STOP
-            putExtra(EXTRA_TITLE, activeTitle)
-            putExtra(EXTRA_DETAIL, activeDetail)
-            putExtra(EXTRA_STAGE, activeStage)
-        }
-        return PendingIntent.getService(
-            this,
-            102,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
-
-    private fun clearWatchNotifications() {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        for (id in 8800..8835) {
-            nm.cancel(id)
-        }
-        nm.cancel(WATCH_ACTIVE_CALL_ID)
-    }
-
-    private fun startWatchAlertBursts(title: String, detail: String, stopPending: PendingIntent) {
-        watchRunnable?.let { watchHandler.removeCallbacks(it) }
-        val settings = ScheduleRepository(this).getSettings()
-        if (!settings.watchSyncEnabled) return
-
-        try {
-            if (wakeLock == null) {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                @Suppress("DEPRECATION")
-                wakeLock = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                    "TrucCaAlarm::WatchAlarmLock"
-                )
-            }
-            if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire(15 * 60 * 1000L)
-            }
-        } catch (_: Exception) {
-        }
-
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        var sent = 0
-        val runner = object : Runnable {
-            override fun run() {
-                sent++
-                val tagTitle = if (sent == 1) title else "$title (#$sent)"
-                try {
-                    nm.cancel(WATCH_ACTIVE_CALL_ID)
-                    WatchNotifier.sendWatchAlert(
-                        context = this@AlarmService,
-                        title = tagTitle,
-                        body = detail,
-                        notificationId = WATCH_ACTIVE_CALL_ID,
-                        stopPendingIntent = stopPending,
-                        isCallAlert = true
-                    )
-                } catch (_: Exception) {
-                }
-                if (watchRunnable === this) {
-                    watchHandler.postDelayed(this, 6_000L)
-                }
-            }
-        }
-        watchRunnable = runner
-        watchHandler.post(runner)
-    }
-
-    private fun startAlarmNotification(
-        title: String,
-        detail: String,
-        stage: Int,
-        stopPending: PendingIntent,
-        launchActivityImmediately: Boolean = true
-    ) {
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Báo thức trực ca",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Kênh thông báo chuông báo thức lịch trực ca"
-            setSound(null, null)
-            enableVibration(false)
-            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-        }
-        nm.createNotificationChannel(channel)
-
-        val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(EXTRA_TITLE, activeTitle)
-            putExtra(EXTRA_DETAIL, activeDetail)
-            putExtra(EXTRA_STAGE, stage)
-        }
-        val fullScreenPending = PendingIntent.getActivity(
-            this,
-            101,
-            fullScreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle(title)
-            .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOngoing(true)
-            .setFullScreenIntent(fullScreenPending, true)
-            .addAction(0, "Tắt báo thức", stopPending)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-
-        if (launchActivityImmediately) {
-            try {
-                startActivity(fullScreenIntent)
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun triggerWatchWakeCallIfEnabled() {
-        try {
-            val settings = ScheduleRepository(this).getSettings()
-            if (!settings.watchSyncEnabled || !settings.watchAutoCallEnabled) return
-            val rawNumber = settings.watchCallNumber.trim()
-            val sanitized = rawNumber.filter { it.isDigit() || it == '+' }
-            if (sanitized.length < 3) return
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                return
-            }
-
-            val uri = Uri.parse("tel:$sanitized")
-            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
-            val targetTail = sanitized.filter { it.isDigit() }.takeLast(9)
-
-            var chosenHandle: android.telecom.PhoneAccountHandle? = null
-            var chosenSlot = 1
-            if (telecomManager != null &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-            ) {
-                val handles = telecomManager.callCapablePhoneAccounts
-                if (handles.size >= 2) {
-                    var matchedIndex = -1
-                    for (i in handles.indices) {
-                        val acct = telecomManager.getPhoneAccount(handles[i])
-                        val addrDigits = acct?.address?.schemeSpecificPart?.filter { it.isDigit() }.orEmpty()
-                        val labelDigits = acct?.label?.toString()?.filter { it.isDigit() }.orEmpty()
-                        if (targetTail.isNotEmpty() && (addrDigits.endsWith(targetTail) || labelDigits.endsWith(targetTail))) {
-                            matchedIndex = i
-                            break
-                        }
-                    }
-                    chosenSlot = if (matchedIndex == 0) 1 else if (matchedIndex == 1) 0 else 1
-                    chosenHandle = handles.getOrNull(chosenSlot) ?: handles.last()
-                } else if (handles.size == 1) {
-                    chosenSlot = 0
-                    chosenHandle = handles.first()
-                }
-            }
-
-            if (telecomManager != null && chosenHandle != null) {
-                val extras = Bundle().apply {
-                    putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, chosenHandle)
-                    putInt("com.android.phone.extra.slot", chosenSlot)
-                    putInt("simSlot", chosenSlot)
-                }
-                telecomManager.placeCall(uri, extras)
-            } else {
-                val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    putExtra("com.android.phone.extra.slot", chosenSlot)
-                    putExtra("simSlot", chosenSlot)
-                }
-                startActivity(callIntent)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun startSoundAndVibration() {
-        try {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(this@AlarmService, uri)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = true
-                prepare()
-                start()
-            }
-        } catch (_: Exception) {
-        }
-
-        try {
-            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            }
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 300), 0))
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun stopAlarmAndSelf() {
-        stopCallWatcher()
-        watchRunnable?.let { watchHandler.removeCallbacks(it) }
-        watchRunnable = null
-        watchHandler.removeCallbacksAndMessages(null)
-        clearWatchNotifications()
-        try {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.cancel(NOTIFICATION_ID)
-        } catch (_: Exception) {
-        }
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (_: Exception) {
-        }
-        mediaPlayer = null
-        try {
-            vibrator?.cancel()
-        } catch (_: Exception) {
-        }
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } catch (_: Exception) {
-        }
+    private fun stopAll() {
+        sessionActive = false
+        vibActive = false
+        clearTimers()
+        vibrator?.cancel()
+        cancelPulseNotif()
+        sendBroadcast(Intent(WakePopupActivity.ACTION_CLOSE_POPUP).setPackage(packageName))
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    override fun onDestroy() {
-        stopCallWatcher()
-        watchRunnable?.let { watchHandler.removeCallbacks(it) }
-        clearWatchNotifications()
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            vibrator?.cancel()
-        } catch (_: Exception) {
+    private fun openPopup() {
+        val i = Intent(this, WakePopupActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(EXTRA_SHIFT_TITLE, shiftTitle)
         }
         try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
+            startActivity(i)
         } catch (_: Exception) {
         }
-        super.onDestroy()
     }
 
-    companion object {
-        const val CHANNEL_ID = "trucca_alarm_channel"
-        const val NOTIFICATION_ID = 7701
-        const val WATCH_ACTIVE_CALL_ID = 8899
-        const val ACTION_START = "com.trucca.alarm.START"
-        const val ACTION_SHOW_POPUP = "com.trucca.alarm.SHOW_POPUP"
-        const val ACTION_STOP = "com.trucca.alarm.STOP"
-        const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
-        const val ACTION_SNOOZE = "com.trucca.alarm.SNOOZE"
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_DETAIL = "extra_detail"
-        const val EXTRA_STAGE = "extra_stage"
+    private fun vibrateNow() {
+        val v = vibrator ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(
+                    VibrationEffect.createWaveform(
+                        longArrayOf(0, 650, 150, 650),
+                        intArrayOf(0, 255, 0, 255),
+                        -1
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(1450)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun pushWatchPulse(n: Int) {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(PULSE_ID)
+
+        val snoozePi = PendingIntent.getService(
+            this,
+            n,
+            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(shiftTitle)
+            .setContentText("Rung #$n")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
+            .setContentIntent(snoozePi)
+            .build()
+
+        nm.notify(PULSE_ID, notif)
+    }
+
+    private fun cancelPulseNotif() {
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(PULSE_ID)
+    }
+
+    private fun buildFgNotif(text: String) = run {
+        val cancelPi = PendingIntent.getService(
+            this,
+            999,
+            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setContentTitle(shiftTitle)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "HUY 1 GIO", cancelPi)
+            .build()
+    }
+
+    private fun updateFgNotif(text: String) {
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(FG_ID, buildFgNotif(text))
+    }
+
+    private fun clearTimers() {
+        handler.removeCallbacks(pulseTask)
+        handler.removeCallbacks(resumeTask)
+        handler.removeCallbacks(expireTask)
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(CHANNEL_ID, "Rung bao thuc 1 gio", NotificationManager.IMPORTANCE_HIGH).apply {
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 600, 150, 600)
+                setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+        }
+    }
+
+    override fun onDestroy() {
+        sessionActive = false
+        vibActive = false
+        clearTimers()
+        vibrator?.cancel()
+        cancelPulseNotif()
+        super.onDestroy()
     }
 }
