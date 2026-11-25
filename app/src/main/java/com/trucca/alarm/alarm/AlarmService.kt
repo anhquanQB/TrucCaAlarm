@@ -1,4 +1,4 @@
-package com.trucca.baothuc
+package com.trucca.alarm.alarm
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -18,14 +19,16 @@ import androidx.core.app.NotificationCompat
 class AlarmService : Service() {
 
     companion object {
-        const val ACTION_START_1H = "com.trucca.baothuc.START_1H"
-        const val ACTION_SNOOZE_1MIN = "com.trucca.baothuc.SNOOZE_1MIN"
-        const val ACTION_CANCEL_1H = "com.trucca.baothuc.CANCEL_1H"
-        const val EXTRA_SHIFT_TITLE = "extra_shift_title"
+        const val ACTION_START_1H = "com.trucca.alarm.START_1H"
+        const val ACTION_SNOOZE_1MIN = "com.trucca.alarm.SNOOZE_1MIN"
+        const val ACTION_CANCEL_1H = "com.trucca.alarm.CANCEL_1H"
 
-        private const val CHANNEL_ID = "watch_vib_1h"
-        private const val FG_ID = 2001
-        private const val PULSE_ID = 2002
+        const val EXTRA_TITLE = "extra_title"
+        const val EXTRA_DETAIL = "extra_detail"
+
+        private const val CHANNEL_ID = "trucca_huawei_watch_msg_v4"
+        private const val FG_ID = 7701
+        private const val PULSE_ID = 8801
 
         private const val WINDOW_MS = 60L * 60L * 1000L
         private const val SNOOZE_MS = 60L * 1000L
@@ -34,8 +37,10 @@ class AlarmService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var vibrator: Vibrator? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
-    private var shiftTitle = "Ca Truc"
+    private var shiftTitle = "Ca Trực"
+    private var shiftDetail = "Đến giờ chuẩn bị vào ca!"
     private var endTimeMs = 0L
     private var sessionActive = false
     private var vibActive = false
@@ -84,7 +89,8 @@ class AlarmService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_1H -> {
-                shiftTitle = intent.getStringExtra(EXTRA_SHIFT_TITLE)?.ifBlank { "Ca Truc" } ?: "Ca Truc"
+                shiftTitle = intent.getStringExtra(EXTRA_TITLE)?.ifBlank { "Ca Trực" } ?: "Ca Trực"
+                shiftDetail = intent.getStringExtra(EXTRA_DETAIL)?.ifBlank { "Đến giờ chuẩn bị vào ca!" } ?: "Đến giờ chuẩn bị vào ca!"
                 startSession()
             }
             ACTION_SNOOZE_1MIN -> snooze1Min()
@@ -100,7 +106,8 @@ class AlarmService : Service() {
         sessionActive = true
         seq = 0
 
-        startForeground(FG_ID, buildFgNotif("Dang rung trong 1 gio"))
+        acquireWakeLock()
+        startForeground(FG_ID, buildFgNotif("Đang rung trong 1 giờ"))
         handler.postDelayed(expireTask, WINDOW_MS)
         startVibCycle()
     }
@@ -109,7 +116,8 @@ class AlarmService : Service() {
         if (!sessionActive) return
         handler.removeCallbacks(pulseTask)
         vibActive = true
-        updateFgNotif("Dang rung lien tuc")
+        acquireWakeLock()
+        updateFgNotif("Đang rung liên tục")
         openPopup()
         handler.post(pulseTask)
     }
@@ -120,6 +128,7 @@ class AlarmService : Service() {
         vibActive = false
         vibrator?.cancel()
         cancelPulseNotif()
+        releaseWakeLock()
 
         val rem = endTimeMs - System.currentTimeMillis()
         if (rem <= 0L) {
@@ -127,7 +136,7 @@ class AlarmService : Service() {
             return
         }
 
-        updateFgNotif("Tam ngung 1 phut")
+        updateFgNotif("Tạm ngừng 1 phút")
         handler.postDelayed(expireTask, rem)
         handler.postDelayed(resumeTask, minOf(SNOOZE_MS, rem))
     }
@@ -138,6 +147,7 @@ class AlarmService : Service() {
         clearTimers()
         vibrator?.cancel()
         cancelPulseNotif()
+        releaseWakeLock()
         sendBroadcast(Intent(WakePopupActivity.ACTION_CLOSE_POPUP).setPackage(packageName))
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -146,7 +156,8 @@ class AlarmService : Service() {
     private fun openPopup() {
         val i = Intent(this, WakePopupActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_SHIFT_TITLE, shiftTitle)
+            putExtra(EXTRA_TITLE, shiftTitle)
+            putExtra(EXTRA_DETAIL, shiftDetail)
         }
         try {
             startActivity(i)
@@ -160,14 +171,14 @@ class AlarmService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 v.vibrate(
                     VibrationEffect.createWaveform(
-                        longArrayOf(0, 650, 150, 650),
+                        longArrayOf(0, 700, 150, 700),
                         intArrayOf(0, 255, 0, 255),
                         -1
                     )
                 )
             } else {
                 @Suppress("DEPRECATION")
-                v.vibrate(1450)
+                v.vibrate(1500)
             }
         } catch (_: Exception) {
         }
@@ -187,9 +198,9 @@ class AlarmService : Service() {
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(shiftTitle)
-            .setContentText("Rung #$n")
+            .setContentText("$shiftDetail • [Nhịp #$n]")
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
@@ -217,12 +228,32 @@ class AlarmService : Service() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "HUY 1 GIO", cancelPi)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "HỦY 1 GIỜ", cancelPi)
             .build()
     }
 
     private fun updateFgNotif(text: String) {
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(FG_ID, buildFgNotif(text))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "TrucCaAlarm::WakePopupLock"
+        ).apply {
+            acquire(2 * 60 * 1000L)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        wakeLock = null
     }
 
     private fun clearTimers() {
@@ -233,9 +264,9 @@ class AlarmService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(CHANNEL_ID, "Rung bao thuc 1 gio", NotificationManager.IMPORTANCE_HIGH).apply {
+            val ch = NotificationChannel(CHANNEL_ID, "Rung báo thức đồng hồ", NotificationManager.IMPORTANCE_HIGH).apply {
                 enableVibration(true)
-                vibrationPattern = longArrayOf(0, 600, 150, 600)
+                vibrationPattern = longArrayOf(0, 800, 200, 800)
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
@@ -248,6 +279,7 @@ class AlarmService : Service() {
         clearTimers()
         vibrator?.cancel()
         cancelPulseNotif()
+        releaseWakeLock()
         super.onDestroy()
     }
 }
