@@ -1,30 +1,34 @@
 package com.trucca.alarm.alarm
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
-import android.Manifest
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Bundle
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.telecom.TelecomManager
-import androidx.core.content.ContextCompat
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.trucca.alarm.data.ScheduleRepository
 
 class AlarmService : Service() {
@@ -34,15 +38,28 @@ class AlarmService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val watchHandler = Handler(Looper.getMainLooper())
     private var watchRunnable: Runnable? = null
+    private var callFallbackRunnable: Runnable? = null
+
     private var activeTitle: String = "Sắp vào ca trực!"
     private var activeDetail: String = "Chuẩn bị đi làm."
     private var activeStage: Int = 1
+    private var waitingForCallEnd: Boolean = false
+    private var sawCallActiveOrOffhook: Boolean = false
+
+    private var telephonyCallback: Any? = null
+    @Suppress("DEPRECATION")
+    private var legacyPhoneListener: PhoneStateListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                stopCallWatcher()
+                watchRunnable?.let { watchHandler.removeCallbacks(it) }
+                watchRunnable = null
+                watchHandler.removeCallbacksAndMessages(null)
+                clearWatchNotifications()
                 val stageToFinish = intent.getIntExtra(EXTRA_STAGE, activeStage)
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
                 val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
@@ -54,10 +71,20 @@ class AlarmService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_DISMISS_ALL -> {
+                stopCallWatcher()
+                watchRunnable?.let { watchHandler.removeCallbacks(it) }
+                watchRunnable = null
+                watchHandler.removeCallbacksAndMessages(null)
+                clearWatchNotifications()
                 stopAlarmAndSelf()
                 return START_NOT_STICKY
             }
             ACTION_SNOOZE -> {
+                stopCallWatcher()
+                watchRunnable?.let { watchHandler.removeCallbacks(it) }
+                watchRunnable = null
+                watchHandler.removeCallbacksAndMessages(null)
+                clearWatchNotifications()
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
                 val detail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
                 val stage = intent.getIntExtra(EXTRA_STAGE, activeStage)
@@ -65,11 +92,28 @@ class AlarmService : Service() {
                 stopAlarmAndSelf()
                 return START_NOT_STICKY
             }
+            ACTION_SHOW_POPUP -> {
+                stopCallWatcher()
+                activeTitle = intent.getStringExtra(EXTRA_TITLE) ?: activeTitle
+                activeDetail = intent.getStringExtra(EXTRA_DETAIL) ?: activeDetail
+                activeStage = intent.getIntExtra(EXTRA_STAGE, activeStage)
+                val watchBody = "$activeDetail • [Đợt $activeStage.2/3]"
+                val stopPending = buildStopStagePendingIntent()
+                startAlarmNotification(
+                    title = activeTitle,
+                    detail = watchBody,
+                    stage = activeStage,
+                    stopPending = stopPending,
+                    launchActivityImmediately = true
+                )
+                startSoundAndVibration()
+                startWatchAlertBursts(activeTitle, watchBody, stopPending)
+            }
             else -> {
+                stopCallWatcher()
                 activeTitle = intent?.getStringExtra(EXTRA_TITLE) ?: "Sắp vào ca trực!"
                 activeDetail = intent?.getStringExtra(EXTRA_DETAIL) ?: "Chuẩn bị đi làm."
                 activeStage = intent?.getIntExtra(EXTRA_STAGE, 1) ?: 1
-                val watchBody = "$activeDetail • [Đợt $activeStage/3]"
                 val stopPending = buildStopStagePendingIntent()
                 val settings = ScheduleRepository(this).getSettings()
                 val willAutoCall = settings.watchSyncEnabled &&
@@ -77,23 +121,136 @@ class AlarmService : Service() {
                     settings.watchCallNumber.filter { it.isDigit() || it == '+' }.length >= 3 &&
                     ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
 
-                startAlarmNotification(
-                    title = activeTitle,
-                    detail = watchBody,
-                    stage = activeStage,
-                    stopPending = stopPending,
-                    launchActivityImmediately = !willAutoCall
-                )
-                startSoundAndVibration()
                 if (willAutoCall) {
+                    // Dot X.1: Goi dien truoc, cho nguoi dung tat cuoc goi tren dong ho hoac dien thoai
+                    val callPhaseBody = "$activeDetail • [Đợt $activeStage.1/3 - Đang gọi]"
+                    startAlarmNotification(
+                        title = activeTitle,
+                        detail = callPhaseBody,
+                        stage = activeStage,
+                        stopPending = stopPending,
+                        launchActivityImmediately = false
+                    )
+                    startCallEndWatcher()
                     watchHandler.postDelayed({ triggerWatchWakeCallIfEnabled() }, 350L)
-                    watchHandler.postDelayed({ startWatchAlertBursts(activeTitle, watchBody, stopPending) }, 25_000L)
                 } else {
+                    val watchBody = "$activeDetail • [Đợt $activeStage/3]"
+                    startAlarmNotification(
+                        title = activeTitle,
+                        detail = watchBody,
+                        stage = activeStage,
+                        stopPending = stopPending,
+                        launchActivityImmediately = true
+                    )
+                    startSoundAndVibration()
                     startWatchAlertBursts(activeTitle, watchBody, stopPending)
                 }
             }
         }
         return START_STICKY
+    }
+
+    private fun transitionFromCallToPopup() {
+        if (!waitingForCallEnd) return
+        stopCallWatcher()
+        val popupIntent = Intent(this, AlarmService::class.java).apply {
+            action = ACTION_SHOW_POPUP
+            putExtra(EXTRA_TITLE, activeTitle)
+            putExtra(EXTRA_DETAIL, activeDetail)
+            putExtra(EXTRA_STAGE, activeStage)
+        }
+        startService(popupIntent)
+    }
+
+    private fun startCallEndWatcher() {
+        waitingForCallEnd = true
+        sawCallActiveOrOffhook = false
+
+        // Du phong toi da 70s neu nha mang tu ngat ma khong tra ve trang thai IDLE
+        val fallback = Runnable {
+            if (waitingForCallEnd) {
+                transitionFromCallToPopup()
+            }
+        }
+        callFallbackRunnable = fallback
+        watchHandler.postDelayed(fallback, 70_000L)
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                registerModernCallStateCallback(tm)
+            } else {
+                registerLegacyPhoneStateListener(tm)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun registerModernCallStateCallback(tm: TelephonyManager) {
+        val cb = object : TelephonyCallback(), TelephonyCallback.CallStateListener {
+            override fun onCallStateChanged(state: Int) {
+                handleCallStateChange(state)
+            }
+        }
+        telephonyCallback = cb
+        tm.registerTelephonyCallback(mainExecutor, cb)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun registerLegacyPhoneStateListener(tm: TelephonyManager) {
+        val listener = object : PhoneStateListener() {
+            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                handleCallStateChange(state)
+            }
+        }
+        legacyPhoneListener = listener
+        tm.listen(listener, PhoneStateListener.LISTEN_CALL_STATE)
+    }
+
+    private fun handleCallStateChange(state: Int) {
+        if (!waitingForCallEnd) return
+        when (state) {
+            TelephonyManager.CALL_STATE_OFFHOOK,
+            TelephonyManager.CALL_STATE_RINGING -> {
+                sawCallActiveOrOffhook = true
+            }
+            TelephonyManager.CALL_STATE_IDLE -> {
+                if (sawCallActiveOrOffhook) {
+                    // Nguoi dung vua tat/tu choi cuoc goi tren dong ho hoac dien thoai -> bat ngay Dot X.2 (Pop-up)
+                    watchHandler.postDelayed({ transitionFromCallToPopup() }, 400L)
+                }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun stopCallWatcher() {
+        waitingForCallEnd = false
+        sawCallActiveOrOffhook = false
+        callFallbackRunnable?.let { watchHandler.removeCallbacks(it) }
+        callFallbackRunnable = null
+        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (telephonyCallback as? TelephonyCallback)?.let {
+                    tm.unregisterTelephonyCallback(it)
+                }
+                telephonyCallback = null
+            } else {
+                legacyPhoneListener?.let {
+                    tm.listen(it, PhoneStateListener.LISTEN_NONE)
+                }
+                legacyPhoneListener = null
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun buildStopStagePendingIntent(): PendingIntent {
@@ -157,7 +314,9 @@ class AlarmService : Service() {
                     )
                 } catch (_: Exception) {
                 }
-                watchHandler.postDelayed(this, 6_000L)
+                if (watchRunnable === this) {
+                    watchHandler.postDelayed(this, 6_000L)
+                }
             }
         }
         watchRunnable = runner
@@ -325,9 +484,16 @@ class AlarmService : Service() {
     }
 
     private fun stopAlarmAndSelf() {
+        stopCallWatcher()
         watchRunnable?.let { watchHandler.removeCallbacks(it) }
         watchRunnable = null
+        watchHandler.removeCallbacksAndMessages(null)
         clearWatchNotifications()
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {
+        }
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()
@@ -347,6 +513,7 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        stopCallWatcher()
         watchRunnable?.let { watchHandler.removeCallbacks(it) }
         clearWatchNotifications()
         try {
@@ -367,6 +534,7 @@ class AlarmService : Service() {
         const val NOTIFICATION_ID = 7701
         const val WATCH_ACTIVE_CALL_ID = 8899
         const val ACTION_START = "com.trucca.alarm.START"
+        const val ACTION_SHOW_POPUP = "com.trucca.alarm.SHOW_POPUP"
         const val ACTION_STOP = "com.trucca.alarm.STOP"
         const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
         const val ACTION_SNOOZE = "com.trucca.alarm.SNOOZE"
