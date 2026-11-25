@@ -1658,14 +1658,19 @@ private fun SettingsTab(
     var nightBefore by remember(settings) { mutableStateOf(settings.nightAlarmBeforeMin.toString()) }
     var membersMap by remember(settings) { mutableStateOf(settings.kipMembers.toMutableMap()) }
     var selectedTheme by remember(settings) { mutableStateOf(settings.resolvedTheme()) }
+    var autoRandomTheme by remember(settings) { mutableStateOf(settings.autoRandomThemeEnabled) }
 
     var showThemePopup by remember { mutableStateOf(false) }
     var showAlarmPopup by remember { mutableStateOf(false) }
     var showWatchPopup by remember { mutableStateOf(false) }
     var showCrewPopup by remember { mutableStateOf(false) }
 
-    fun buildUpdatedSettings(themeOverride: GlassThemeId = selectedTheme): AppSettings = settings.copy(
+    fun buildUpdatedSettings(
+        themeOverride: GlassThemeId = selectedTheme,
+        autoRandomOverride: Boolean = autoRandomTheme
+    ): AppSettings = settings.copy(
         themeId = themeOverride.name,
+        autoRandomThemeEnabled = autoRandomOverride,
         alarmEnabled = alarmEnabled,
         watchSyncEnabled = watchSyncEnabled,
         watchAutoCallEnabled = watchAutoCallEnabled,
@@ -1727,7 +1732,7 @@ private fun SettingsTab(
                                     .clip(CircleShape)
                                     .background(Brush.linearGradient(listOf(tp.heroStart, tp.accent)))
                             )
-                            Text("${selectedTheme.label} ▾", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(if (autoRandomTheme) "Ngẫu nhiên (1 phút) ▾" else "${selectedTheme.label} ▾", color = p.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                     InfoHintButton(
@@ -1870,12 +1875,45 @@ private fun SettingsTab(
         BouncyGlassDialog(onDismissRequest = { showThemePopup = false }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Chọn màu ánh phản chiếu", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (autoRandomTheme) p.accent.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.07f))
+                        .border(
+                            width = if (autoRandomTheme) 1.5.dp else 1.dp,
+                            color = if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .clickable {
+                            autoRandomTheme = !autoRandomTheme
+                            onSave(buildUpdatedSettings(autoRandomOverride = autoRandomTheme))
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Tự động ngẫu nhiên (1 phút)",
+                        color = p.softWhite,
+                        fontSize = 13.sp,
+                        fontWeight = if (autoRandomTheme) FontWeight.Bold else FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = autoRandomTheme,
+                        onCheckedChange = {
+                            autoRandomTheme = it
+                            onSave(buildUpdatedSettings(autoRandomOverride = it))
+                        }
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassThemeId.entries.chunked(2).forEach { rowItems ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowItems.forEach { t ->
                                 val tp = paletteFor(t)
-                                val active = t == selectedTheme
+                                val active = !autoRandomTheme && t == selectedTheme
                                 Row(
                                     modifier = Modifier
                                         .weight(1f)
@@ -1888,7 +1926,8 @@ private fun SettingsTab(
                                         )
                                         .clickable {
                                             selectedTheme = t
-                                            onSave(buildUpdatedSettings(themeOverride = t))
+                                            autoRandomTheme = false
+                                            onSave(buildUpdatedSettings(themeOverride = t, autoRandomOverride = false))
                                             showThemePopup = false
                                         }
                                         .padding(horizontal = 10.dp, vertical = 11.dp),
