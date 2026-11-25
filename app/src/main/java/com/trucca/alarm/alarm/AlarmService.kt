@@ -93,6 +93,7 @@ class AlarmService : Service() {
         for (id in 8800..8835) {
             nm.cancel(id)
         }
+        nm.cancel(WATCH_ACTIVE_CALL_ID)
     }
 
     private fun startWatchAlertBursts(title: String, detail: String, stopPending: PendingIntent) {
@@ -110,7 +111,7 @@ class AlarmService : Service() {
                 )
             }
             if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire(10 * 60 * 1000L)
+                wakeLock?.acquire(15 * 60 * 1000L)
             }
         } catch (_: Exception) {
         }
@@ -119,22 +120,23 @@ class AlarmService : Service() {
         var sent = 0
         val runner = object : Runnable {
             override fun run() {
-                if (sent > 1) {
-                    nm.cancel(8800 + ((sent - 2) % 30))
-                }
                 sent++
                 val tagTitle = if (sent == 1) title else "$title (#$sent)"
                 try {
+                    // Luon huy thong bao truoc do ngay truoc khi gui moi de Huawei Watch
+                    // khong bao gio day khay thong bao (qua 10-11 tin) va luon rung moi 100%
+                    nm.cancel(WATCH_ACTIVE_CALL_ID)
                     WatchNotifier.sendWatchAlert(
                         context = this@AlarmService,
                         title = tagTitle,
                         body = detail,
-                        notificationId = 8800 + (sent % 30),
-                        stopPendingIntent = stopPending
+                        notificationId = WATCH_ACTIVE_CALL_ID,
+                        stopPendingIntent = stopPending,
+                        isCallAlert = true
                     )
                 } catch (_: Exception) {
                 }
-                watchHandler.postDelayed(this, 4_000L)
+                watchHandler.postDelayed(this, 6_000L)
             }
         }
         watchRunnable = runner
@@ -278,6 +280,7 @@ class AlarmService : Service() {
     companion object {
         const val CHANNEL_ID = "trucca_alarm_channel"
         const val NOTIFICATION_ID = 7701
+        const val WATCH_ACTIVE_CALL_ID = 8899
         const val ACTION_START = "com.trucca.alarm.START"
         const val ACTION_STOP = "com.trucca.alarm.STOP"
         const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
