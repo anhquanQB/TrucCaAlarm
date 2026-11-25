@@ -86,9 +86,7 @@ class AlarmService : Service() {
                 )
                 startSoundAndVibration()
                 if (willAutoCall) {
-                    // Uu tien goi dien ngay lap tuc de dong ho rung lien hoi nhu cuoc goi den
                     watchHandler.postDelayed({ triggerWatchWakeCallIfEnabled() }, 350L)
-                    // Lui thong bao dong ho 25s de khong lan at cuoc goi den tren Huawei Health
                     watchHandler.postDelayed({ startWatchAlertBursts(activeTitle, watchBody, stopPending) }, 25_000L)
                 } else {
                     startWatchAlertBursts(activeTitle, watchBody, stopPending)
@@ -148,8 +146,6 @@ class AlarmService : Service() {
                 sent++
                 val tagTitle = if (sent == 1) title else "$title (#$sent)"
                 try {
-                    // Luon huy thong bao truoc do ngay truoc khi gui moi de Huawei Watch
-                    // khong bao gio day khay thong bao (qua 10-11 tin) va luon rung moi 100%
                     nm.cancel(WATCH_ACTIVE_CALL_ID)
                     WatchNotifier.sendWatchAlert(
                         context = this@AlarmService,
@@ -246,3 +242,136 @@ class AlarmService : Service() {
             ) {
                 return
             }
+
+            val uri = Uri.parse("tel:$sanitized")
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+            val targetTail = sanitized.filter { it.isDigit() }.takeLast(9)
+
+            var chosenHandle: android.telecom.PhoneAccountHandle? = null
+            var chosenSlot = 1
+            if (telecomManager != null &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+            ) {
+                val handles = telecomManager.callCapablePhoneAccounts
+                if (handles.size >= 2) {
+                    var matchedIndex = -1
+                    for (i in handles.indices) {
+                        val acct = telecomManager.getPhoneAccount(handles[i])
+                        val addrDigits = acct?.address?.schemeSpecificPart?.filter { it.isDigit() }.orEmpty()
+                        val labelDigits = acct?.label?.toString()?.filter { it.isDigit() }.orEmpty()
+                        if (targetTail.isNotEmpty() && (addrDigits.endsWith(targetTail) || labelDigits.endsWith(targetTail))) {
+                            matchedIndex = i
+                            break
+                        }
+                    }
+                    chosenSlot = if (matchedIndex == 0) 1 else if (matchedIndex == 1) 0 else 1
+                    chosenHandle = handles.getOrNull(chosenSlot) ?: handles.last()
+                } else if (handles.size == 1) {
+                    chosenSlot = 0
+                    chosenHandle = handles.first()
+                }
+            }
+
+            if (telecomManager != null && chosenHandle != null) {
+                val extras = Bundle().apply {
+                    putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, chosenHandle)
+                    putInt("com.android.phone.extra.slot", chosenSlot)
+                    putInt("simSlot", chosenSlot)
+                }
+                telecomManager.placeCall(uri, extras)
+            } else {
+                val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("com.android.phone.extra.slot", chosenSlot)
+                    putExtra("simSlot", chosenSlot)
+                }
+                startActivity(callIntent)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun startSoundAndVibration() {
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(this@AlarmService, uri)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                isLooping = true
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {
+        }
+
+        try {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vm.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 300), 0))
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun stopAlarmAndSelf() {
+        watchRunnable?.let { watchHandler.removeCallbacks(it) }
+        watchRunnable = null
+        clearWatchNotifications()
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+        } catch (_: Exception) {
+        }
+        mediaPlayer = null
+        try {
+            vibrator?.cancel()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        watchRunnable?.let { watchHandler.removeCallbacks(it) }
+        clearWatchNotifications()
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.release()
+            vibrator?.cancel()
+        } catch (_: Exception) {
+        }
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        super.onDestroy()
+    }
+
+    companion object {
+        const val CHANNEL_ID = "trucca_alarm_channel"
+        const val NOTIFICATION_ID = 7701
+        const val WATCH_ACTIVE_CALL_ID = 8899
+        const val ACTION_START = "com.trucca.alarm.START"
+        const val ACTION_STOP = "com.trucca.alarm.STOP"
+        const val ACTION_DISMISS_ALL = "com.trucca.alarm.DISMISS_ALL"
+        const val ACTION_SNOOZE = "com.trucca.alarm.SNOOZE"
+        const val EXTRA_TITLE = "extra_title"
+        const val EXTRA_DETAIL = "extra_detail"
+        const val EXTRA_STAGE = "extra_stage"
+    }
+}
