@@ -84,6 +84,10 @@ import com.trucca.alarm.model.DaySchedule
 import com.trucca.alarm.model.DefaultScheduleData
 import com.trucca.alarm.model.GlassThemeId
 import com.trucca.alarm.model.LunarCalendarUtil
+import com.trucca.alarm.model.ShiftSwapEngine
+import com.trucca.alarm.model.ShiftType
+import com.trucca.alarm.model.SwapStep
+import com.trucca.alarm.model.SwapSuggestion
 import com.trucca.alarm.model.UpcomingShiftInfo
 import com.trucca.alarm.ui.theme.GlassPanel
 import com.trucca.alarm.ui.theme.LiquidGlassBackdrop
@@ -169,6 +173,11 @@ fun MainScreen(
                         onShowInfo = showInfo,
                         onDayEdited = { day ->
                             repo.saveDayExact(day)
+                            schedulesVersion++
+                            onSchedulesUpdated()
+                        },
+                        onSwapApplied = { updatedDays ->
+                            repo.upsertSchedules(updatedDays)
                             schedulesVersion++
                             onSchedulesUpdated()
                         }
@@ -796,16 +805,26 @@ private fun CalendarTab(
     schedulesVersion: Int,
     isSelectedTab: Boolean,
     onShowInfo: (String, String) -> Unit,
-    onDayEdited: (DaySchedule) -> Unit
+    onDayEdited: (DaySchedule) -> Unit,
+    onSwapApplied: (List<DaySchedule>) -> Unit
 ) {
     val p = LocalGlassPalette.current
     val today = LocalDate.now()
     var currentMonth by remember { mutableStateOf(YearMonth.from(today)) }
     val listState = rememberLazyListState()
+    val allSchedules = remember(schedulesVersion) { repo.getAllSchedules() }
     val monthSchedules = remember(currentMonth, schedulesVersion) {
         repo.getSchedulesForMonth(currentMonth).associateBy { it.date }
     }
+    val kipConflicts = remember(allSchedules, settings.selectedKip) {
+        ShiftSwapEngine.findConflictsForKip(allSchedules, settings.selectedKip)
+    }
+    val conflictCells = remember(kipConflicts) {
+        ShiftSwapEngine.conflictCellKeys(kipConflicts)
+    }
     var editingDay by remember { mutableStateOf<DaySchedule?>(null) }
+    var swapTargetDay by remember { mutableStateOf<LocalDate?>(null) }
+    var showSwapDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(isSelectedTab) {
         if (isSelectedTab) {
@@ -838,13 +857,26 @@ private fun CalendarTab(
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 IconButton(onClick = { currentMonth = currentMonth.plusMonths(1) }) {
                     Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Tháng sau", tint = p.softWhite)
                 }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(p.accent.copy(alpha = 0.22f))
+                        .border(1.dp, p.accent.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                        .clickable {
+                            swapTargetDay = LocalDate.now()
+                            showSwapDialog = true
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text("Đổi ca", color = p.softWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
                 InfoHintButton(
-                    title = "Hướng dẫn Lịch tháng",
-                    message = "Ô nổi bật là Kíp ${settings.selectedKip} của bạn. Chạm trực tiếp vào từng ngày để sửa Kíp hoặc nhập tên người trực riêng cho Ca Sáng / Ca Chiều / Ca Khuya.",
+                    title = "Hướng dẫn Lịch tháng & Đổi ca",
+                    message = "Ô nổi bật là Kíp ${settings.selectedKip}. Ô viền đỏ là ca vi phạm luật nghỉ tối thiểu 12 giờ (2 ca). Bấm 'Đổi ca' để tìm đổi vòng 2–4 kíp trong ±30 ngày hoặc dạy app mẫu đổi mới.",
                     onShowInfo = onShowInfo
                 )
             }
@@ -861,6 +893,34 @@ private fun CalendarTab(
                 Text("Sáng", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
                 Text("Chiều", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
                 Text("Đêm", color = p.softWhite, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 13.sp)
+            }
+        }
+
+        if (kipConflicts.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFEF4444).copy(alpha = 0.22f))
+                    .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "⚠️ Cảnh báo phạm luật nghỉ 12h (tối thiểu 2 ca) — Kíp ${settings.selectedKip}:",
+                        color = Color(0xFFFCA5A5),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    kipConflicts.take(3).forEach { c ->
+                        Text(
+                            text = "• ${c.summary()}",
+                            color = Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
         }
 
@@ -909,9 +969,24 @@ private fun CalendarTab(
                                 fontSize = 10.sp
                             )
                         }
-                        ShiftCellBadge(sched.morningKip, sched.morningKip == settings.selectedKip, Modifier.weight(1f))
-                        ShiftCellBadge(sched.afternoonKip, sched.afternoonKip == settings.selectedKip, Modifier.weight(1f))
-                        ShiftCellBadge(sched.nightKip, sched.nightKip == settings.selectedKip, Modifier.weight(1f))
+                        ShiftCellBadge(
+                            kip = sched.morningKip,
+                            isHighlighted = sched.morningKip == settings.selectedKip,
+                            isConflict = (date.toString() to ShiftType.MORNING) in conflictCells,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ShiftCellBadge(
+                            kip = sched.afternoonKip,
+                            isHighlighted = sched.afternoonKip == settings.selectedKip,
+                            isConflict = (date.toString() to ShiftType.AFTERNOON) in conflictCells,
+                            modifier = Modifier.weight(1f)
+                        )
+                        ShiftCellBadge(
+                            kip = sched.nightKip,
+                            isHighlighted = sched.nightKip == settings.selectedKip,
+                            isConflict = (date.toString() to ShiftType.NIGHT) in conflictCells,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -922,30 +997,67 @@ private fun CalendarTab(
         EditDayDialog(
             day = day,
             onDismiss = { editingDay = null },
+            onOpenSwap = {
+                editingDay = null
+                swapTargetDay = try { LocalDate.parse(day.date) } catch (_: Exception) { LocalDate.now() }
+                showSwapDialog = true
+            },
             onSave = { updated ->
                 onDayEdited(updated)
                 editingDay = null
             }
         )
     }
+
+    if (showSwapDialog) {
+        ShiftSwapDialog(
+            repo = repo,
+            settings = settings,
+            initialDate = swapTargetDay ?: LocalDate.now(),
+            onDismiss = { showSwapDialog = false },
+            onApplySwap = { updatedDays ->
+                onSwapApplied(updatedDays)
+                showSwapDialog = false
+            }
+        )
+    }
 }
 
 @Composable
-private fun ShiftCellBadge(kip: String, isHighlighted: Boolean, modifier: Modifier) {
+private fun ShiftCellBadge(
+    kip: String,
+    isHighlighted: Boolean,
+    isConflict: Boolean = false,
+    modifier: Modifier
+) {
     val p = LocalGlassPalette.current
+    val bgColor = when {
+        isConflict -> Color(0xFFEF4444).copy(alpha = 0.35f)
+        isHighlighted -> p.highlightYellow
+        else -> Color.White.copy(alpha = 0.09f)
+    }
+    val txtColor = when {
+        isConflict -> Color(0xFFFECACA)
+        isHighlighted -> Color(0xFF0F172A)
+        else -> p.softWhite
+    }
     Box(modifier = modifier.padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(9.dp))
-                .background(if (isHighlighted) p.highlightYellow else Color.White.copy(alpha = 0.09f))
+                .background(bgColor)
+                .then(
+                    if (isConflict) Modifier.border(1.4.dp, Color(0xFFEF4444), RoundedCornerShape(9.dp))
+                    else Modifier
+                )
                 .padding(vertical = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = kip,
-                color = if (isHighlighted) Color(0xFF0F172A) else p.softWhite,
-                fontWeight = if (isHighlighted) FontWeight.ExtraBold else FontWeight.Medium,
+                text = if (isConflict) "$kip!" else kip,
+                color = txtColor,
+                fontWeight = if (isHighlighted || isConflict) FontWeight.ExtraBold else FontWeight.Medium,
                 fontSize = 14.sp
             )
         }
@@ -956,6 +1068,7 @@ private fun ShiftCellBadge(kip: String, isHighlighted: Boolean, modifier: Modifi
 private fun EditDayDialog(
     day: DaySchedule,
     onDismiss: () -> Unit,
+    onOpenSwap: () -> Unit,
     onSave: (DaySchedule) -> Unit
 ) {
     var morning by remember { mutableStateOf(day.morningKip) }
@@ -1019,7 +1132,15 @@ private fun EditDayDialog(
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onOpenSwap) {
+                    Text("Đổi ca ngày này", color = p.highlightYellow, fontWeight = FontWeight.Bold)
+                }
+                Row {
                 TextButton(onClick = onDismiss) { Text("Hủy", color = p.mutedText) }
                 TextButton(onClick = {
                     onSave(
@@ -1033,6 +1154,341 @@ private fun EditDayDialog(
                         )
                     )
                 }) { Text("Lưu", color = p.accent, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShiftSwapDialog(
+    repo: ScheduleRepository,
+    settings: AppSettings,
+    initialDate: LocalDate,
+    onDismiss: () -> Unit,
+    onApplySwap: (List<DaySchedule>) -> Unit
+) {
+    val p = LocalGlassPalette.current
+    val allSchedules = remember { repo.getAllSchedules() }
+    val myKip = settings.selectedKip
+    var mode by remember { mutableIntStateOf(0) } // 0 = Gợi ý, 1 = Tự đổi & Kiểm tra, 2 = Dạy app
+
+    // Collect upcoming/nearby shifts of myKip within -7..+30 days from initialDate
+    val myShiftOptions = remember(allSchedules, myKip, initialDate) {
+        val list = mutableListOf<Pair<LocalDate, ShiftType>>()
+        var d = initialDate.minusDays(7)
+        val end = initialDate.plusDays(30)
+        while (!d.isAfter(end)) {
+            val s = allSchedules[d.toString()]
+            if (s != null) {
+                for (t in ShiftType.entries) {
+                    if (s.kipFor(t).equals(myKip, ignoreCase = true)) {
+                        list.add(d to t)
+                    }
+                }
+            }
+            d = d.plusDays(1)
+        }
+        list
+    }
+
+    var selectedIdx by remember {
+        val idx = myShiftOptions.indexOfFirst { !it.first.isBefore(initialDate) }.coerceAtLeast(0)
+        mutableIntStateOf(idx)
+    }
+    val selectedTarget = myShiftOptions.getOrNull(selectedIdx)
+    var learnedPatterns by remember { mutableStateOf(repo.getLearnedSwapPatterns()) }
+
+    val suggestions = remember(selectedTarget, learnedPatterns, allSchedules, myKip) {
+        if (selectedTarget == null) emptyList()
+        else ShiftSwapEngine.findSwapSuggestions(
+            schedules = allSchedules,
+            targetDate = selectedTarget.first,
+            targetShiftType = selectedTarget.second,
+            myKip = myKip,
+            learnedPatterns = learnedPatterns,
+            maxDays = 30
+        )
+    }
+
+    // Manual swap / Teach states
+    var manualPayDate by remember { mutableStateOf((selectedTarget?.first ?: initialDate).plusDays(2).toString()) }
+    var manualPayShift by remember { mutableStateOf(ShiftType.MORNING) }
+    var patternName by remember { mutableStateOf("") }
+    var teachStatus by remember { mutableStateOf<String?>(null) }
+
+    val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
+
+    BouncyGlassDialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Đổi ca thông minh (Kíp $myKip)",
+                color = p.softWhite,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // 3 compact mode pills
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Gợi ý", "Tự đổi", "Dạy app").forEachIndexed { idx, label ->
+                    val active = mode == idx
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) p.accent.copy(alpha = 0.30f) else Color.White.copy(alpha = 0.08f))
+                            .border(
+                                1.dp,
+                                if (active) p.accent else Color.White.copy(alpha = 0.16f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { mode = idx; teachStatus = null }
+                            .padding(vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (active) Color.White else p.mutedText,
+                            fontSize = 12.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            // Target shift selector
+            if (selectedTarget != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.07f))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { if (selectedIdx > 0) selectedIdx-- },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowLeft, contentDescription = null, tint = p.softWhite)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Ca muốn nghỉ", color = p.mutedText, fontSize = 10.sp)
+                        Text(
+                            text = "${selectedTarget.second.displayName} • ${selectedTarget.first.format(dateFmt)}",
+                            color = p.highlightYellow,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    IconButton(
+                        onClick = { if (selectedIdx < myShiftOptions.lastIndex) selectedIdx++ },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = p.softWhite)
+                    }
+                }
+            } else {
+                Text("Không tìm thấy ca trực nào của Kíp $myKip quanh ngày này.", color = p.mutedText, fontSize = 13.sp)
+            }
+
+            if (mode == 0 && selectedTarget != null) {
+                Text(
+                    text = "Phạm vi ±30 ngày • Ưu tiên 2 → 3 → 4 kíp, gần nhất & trong tháng",
+                    color = p.mutedText,
+                    fontSize = 11.sp
+                )
+                if (suggestions.isEmpty()) {
+                    Text(
+                        text = "Chưa tìm thấy phương án đổi ca hợp lệ trong ±30 ngày. Bạn có thể chuyển sang tab 'Dạy app' nếu tự tìm được cách đổi.",
+                        color = p.mutedText,
+                        fontSize = 13.sp
+                    )
+                } else {
+                    suggestions.take(6).forEach { sug ->
+                        val headerTag = buildString {
+                            if (sug.isFromLearnedPattern) append("★ Đã học (${sug.patternLabel}) • ")
+                            append("Đổi ${sug.participantCount} kíp • ")
+                            append(if (sug.allSameMonth) "Trong tháng" else "Sang tháng")
+                            append(" (${sug.maxDayDistance} ngày)")
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .border(
+                                    1.dp,
+                                    if (sug.isFromLearnedPattern) p.highlightYellow.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.18f),
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(headerTag, color = p.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            sug.steps.forEach { st ->
+                                val dShort = try { LocalDate.parse(st.dateStr).format(dateFmt) } catch (_: Exception) { st.dateStr }
+                                Text(
+                                    text = "• ${st.shiftType.shortName} $dShort: Kíp ${st.fromKip} → Kíp ${st.toKip}",
+                                    color = p.softWhite,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            val partnerKips = sug.steps.map { it.toKip }.filter { it != myKip }.distinct()
+                            val partnerText = partnerKips.joinToString(" | ") { k ->
+                                "Kíp $k: ${settings.kipMembers[k].orEmpty()}"
+                            }
+                            if (partnerText.isNotBlank()) {
+                                Text(partnerText, color = p.mutedText, fontSize = 11.sp, maxLines = 2)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = {
+                                    val updated = ShiftSwapEngine.applySwap(allSchedules, sug.steps)
+                                    onApplySwap(updated)
+                                }) {
+                                    Text("Áp dụng đổi ca", color = p.highlightYellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if ((mode == 1 || mode == 2) && selectedTarget != null) {
+                Text(
+                    text = if (mode == 1) "Nhập ngày & ca bạn sẽ trực trả để kiểm tra luật nghỉ 12h (2 ca):"
+                    else "Nhập ca trả hợp lệ để lưu thành mẫu cho thuật toán học:",
+                    color = p.mutedText,
+                    fontSize = 12.sp
+                )
+                OutlinedTextField(
+                    value = manualPayDate,
+                    onValueChange = { manualPayDate = it.take(10) },
+                    label = { Text("Ngày trực trả (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ShiftType.entries.forEach { st ->
+                        val active = manualPayShift == st
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (active) p.highlightYellow else Color.White.copy(alpha = 0.08f))
+                                .clickable { manualPayShift = st }
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = st.shortName,
+                                color = if (active) Color(0xFF0F172A) else p.softWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                val payDaySched = allSchedules[manualPayDate.trim()]
+                val partnerKip = payDaySched?.kipFor(manualPayShift)
+                val manualSteps = if (partnerKip != null && partnerKip != "-" && !partnerKip.equals(myKip, ignoreCase = true)) {
+                    listOf(
+                        SwapStep(selectedTarget.first.toString(), selectedTarget.second, myKip, partnerKip),
+                        SwapStep(manualPayDate.trim(), manualPayShift, partnerKip, myKip)
+                    )
+                } else emptyList()
+
+                val manualConflicts = remember(manualSteps, allSchedules) {
+                    if (manualSteps.isEmpty()) emptyList()
+                    else ShiftSwapEngine.validateSwap(allSchedules, manualSteps)
+                }
+
+                if (partnerKip == null || partnerKip == "-") {
+                    Text("Ngày $manualPayDate chưa có dữ liệu lịch.", color = Color(0xFFFCA5A5), fontSize = 12.sp)
+                } else if (partnerKip.equals(myKip, ignoreCase = true)) {
+                    Text("Ca này đã thuộc Kíp $myKip của bạn rồi.", color = Color(0xFFFCA5A5), fontSize = 12.sp)
+                } else if (manualConflicts.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFEF4444).copy(alpha = 0.25f))
+                            .border(1.dp, Color(0xFFEF4444), RoundedCornerShape(12.dp))
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("⚠️ Vi phạm luật nghỉ tối thiểu 12h (2 ca):", color = Color(0xFFFCA5A5), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            manualConflicts.take(3).forEach { c ->
+                                Text("• ${c.summary()}", color = Color.White, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "✅ Hợp lệ! Đổi với Kíp $partnerKip (${settings.kipMembers[partnerKip].orEmpty()})",
+                        color = Color(0xFF86EFAC),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                if (mode == 2) {
+                    OutlinedTextField(
+                        value = patternName,
+                        onValueChange = { patternName = it.take(30) },
+                        label = { Text("Tên mẫu đổi ca (ví dụ: Đổi chéo 2 ngày)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            if (manualSteps.isNotEmpty() && manualConflicts.isEmpty()) {
+                                val pat = ShiftSwapEngine.extractLearnedPattern(
+                                    targetDate = selectedTarget.first,
+                                    steps = manualSteps,
+                                    myKip = myKip,
+                                    name = patternName
+                                )
+                                repo.saveLearnedSwapPattern(pat)
+                                learnedPatterns = repo.getLearnedSwapPatterns()
+                                teachStatus = "Đã lưu mẫu '${pat.name}'. Thuật toán sẽ ưu tiên gợi ý mẫu này cho các lần đổi sau!"
+                                patternName = ""
+                            }
+                        },
+                        enabled = manualSteps.isNotEmpty() && manualConflicts.isEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Lưu mẫu đào tạo thuật toán") }
+                    teachStatus?.let {
+                        Text(it, color = p.highlightYellow, fontSize = 12.sp)
+                    }
+                    if (learnedPatterns.isNotEmpty()) {
+                        Text("Mẫu đã học (${learnedPatterns.size}): ${learnedPatterns.joinToString { it.name }}", color = p.mutedText, fontSize = 11.sp)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (manualSteps.isNotEmpty()) {
+                                val updated = ShiftSwapEngine.applySwap(allSchedules, manualSteps)
+                                onApplySwap(updated)
+                            }
+                        },
+                        enabled = manualSteps.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (manualConflicts.isEmpty()) "Áp dụng đổi ca" else "Vẫn áp dụng (sẽ báo đỏ)")
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Đóng", color = p.accent) }
             }
         }
     }
