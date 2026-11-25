@@ -2001,43 +2001,10 @@ private fun SettingsTab(
     // Pop-up 1: Theme Picker (BouncyGlassDialog)
     if (showThemePopup) {
         BouncyGlassDialog(onDismissRequest = { showThemePopup = false }) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Chọn màu ánh phản chiếu", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (autoRandomTheme) p.accent.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.07f))
-                        .border(
-                            width = if (autoRandomTheme) 1.5.dp else 1.dp,
-                            color = if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(14.dp)
-                        )
-                        .clickable {
-                            autoRandomTheme = !autoRandomTheme
-                            onSave(buildUpdatedSettings(autoRandomOverride = autoRandomTheme))
-                        }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Tự động ngẫu nhiên (1 phút)",
-                        color = p.softWhite,
-                        fontSize = 13.sp,
-                        fontWeight = if (autoRandomTheme) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = autoRandomTheme,
-                        onCheckedChange = {
-                            autoRandomTheme = it
-                            onSave(buildUpdatedSettings(autoRandomOverride = it))
-                        }
-                    )
-                }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassThemeId.entries.chunked(2).forEach { rowItems ->
+                    GlassThemeId.entries.chunked(2).forEachIndexed { rowIndex, rowItems ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             rowItems.forEach { t ->
                                 val tp = paletteFor(t)
@@ -2072,6 +2039,75 @@ private fun SettingsTab(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(t.label, color = p.softWhite, fontSize = 12.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                                }
+                            }
+                            if (rowIndex == GlassThemeId.entries.chunked(2).lastIndex) {
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (autoRandomTheme) p.accent.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.07f))
+                                        .border(
+                                            width = if (autoRandomTheme) 1.5.dp else 1.dp,
+                                            color = if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.18f),
+                                            shape = RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable {
+                                            autoRandomTheme = !autoRandomTheme
+                                            onSave(buildUpdatedSettings(autoRandomOverride = autoRandomTheme))
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    Brush.linearGradient(
+                                                        listOf(
+                                                            Color(0xFF38BDF8),
+                                                            Color(0xFFA855F7),
+                                                            Color(0xFFFACC15)
+                                                        )
+                                                    )
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (autoRandomTheme) {
+                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "1 phút",
+                                            color = p.softWhite,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (autoRandomTheme) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .width(26.dp)
+                                            .height(15.dp)
+                                            .clip(CircleShape)
+                                            .background(if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.22f))
+                                            .padding(2.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(11.dp)
+                                                .clip(CircleShape)
+                                                .background(if (autoRandomTheme) Color(0xFF07101F) else Color.White)
+                                                .align(if (autoRandomTheme) Alignment.CenterEnd else Alignment.CenterStart)
+                                        )
+                                    }
                                 }
                             }
                         }
