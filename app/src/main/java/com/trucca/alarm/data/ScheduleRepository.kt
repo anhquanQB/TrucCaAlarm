@@ -89,6 +89,87 @@ class ScheduleRepository(context: Context) {
             }
         }
         saveSchedulesMap(current)
+        // Dong bo lich goc cho cac ngay moi nhap de nut "Lich goc" khong xoa mat thang moi nhap
+        val orig = loadSchedulesByKey(KEY_ORIGINAL_SCHEDULES)?.toMutableMap() ?: current.toMutableMap()
+        items.forEach { incoming ->
+            val existing = orig[incoming.date]
+            orig[incoming.date] = if (existing != null) {
+                incoming.copy(
+                    morningMembers = incoming.morningMembers.ifBlank { existing.morningMembers },
+                    afternoonMembers = incoming.afternoonMembers.ifBlank { existing.afternoonMembers },
+                    nightMembers = incoming.nightMembers.ifBlank { existing.nightMembers }
+                )
+            } else {
+                incoming
+            }
+        }
+        saveSchedulesByKey(KEY_ORIGINAL_SCHEDULES, orig)
+    }
+
+    fun applySwapSchedules(updatedDays: List<DaySchedule>) {
+        val current = getAllSchedules()
+        // Luu ban lich goc truoc lan doi ca dau tien (neu chua co)
+        if (prefs.getString(KEY_ORIGINAL_SCHEDULES, null).isNullOrBlank()) {
+            saveSchedulesByKey(KEY_ORIGINAL_SCHEDULES, current)
+        }
+        // Luu ban sao ngay truoc lan doi ca nay de co the "Hoan tac"
+        saveSchedulesByKey(KEY_LAST_SWAP_BACKUP, current)
+
+        val next = current.toMutableMap()
+        updatedDays.forEach { incoming ->
+            val existing = next[incoming.date]
+            next[incoming.date] = if (existing != null) {
+                incoming.copy(
+                    morningMembers = incoming.morningMembers.ifBlank { existing.morningMembers },
+                    afternoonMembers = incoming.afternoonMembers.ifBlank { existing.afternoonMembers },
+                    nightMembers = incoming.nightMembers.ifBlank { existing.nightMembers }
+                )
+            } else {
+                incoming
+            }
+        }
+        saveSchedulesMap(next)
+    }
+
+    fun hasSwapBackup(): Boolean {
+        return !prefs.getString(KEY_LAST_SWAP_BACKUP, null).isNullOrBlank()
+    }
+
+    fun undoLastSwap(): Boolean {
+        val backup = loadSchedulesByKey(KEY_LAST_SWAP_BACKUP) ?: return false
+        if (backup.isEmpty()) return false
+        saveSchedulesMap(backup)
+        prefs.edit().remove(KEY_LAST_SWAP_BACKUP).apply()
+        return true
+    }
+
+    fun restoreOriginalSchedule(): Boolean {
+        val original = loadSchedulesByKey(KEY_ORIGINAL_SCHEDULES)
+        val target = if (!original.isNullOrEmpty()) {
+            original
+        } else {
+            DefaultScheduleData.initialSchedules().associateBy { it.date }
+        }
+        saveSchedulesMap(target)
+        prefs.edit().remove(KEY_LAST_SWAP_BACKUP).apply()
+        return true
+    }
+
+    private fun loadSchedulesByKey(key: String): Map<String, DaySchedule>? {
+        val raw = prefs.getString(key, null)
+        if (raw.isNullOrBlank()) return null
+        return try {
+            val type = object : TypeToken<List<DaySchedule>>() {}.type
+            val list: List<DaySchedule> = gson.fromJson(raw, type) ?: emptyList()
+            if (list.isEmpty()) null else list.associateBy { it.date }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun saveSchedulesByKey(key: String, map: Map<String, DaySchedule>) {
+        val sortedMap = map.toSortedMap()
+        prefs.edit().putString(key, gson.toJson(sortedMap.values.toList())).apply()
     }
 
     fun saveDayExact(day: DaySchedule) {
@@ -218,6 +299,8 @@ class ScheduleRepository(context: Context) {
         private const val PREFS_NAME = "truc_ca_prefs"
         private const val KEY_SETTINGS = "app_settings"
         private const val KEY_SCHEDULES = "day_schedules"
+        private const val KEY_ORIGINAL_SCHEDULES = "original_day_schedules"
+        private const val KEY_LAST_SWAP_BACKUP = "last_swap_backup"
         private const val KEY_LEARNED_SWAPS = "learned_swap_patterns"
 
         @Volatile
