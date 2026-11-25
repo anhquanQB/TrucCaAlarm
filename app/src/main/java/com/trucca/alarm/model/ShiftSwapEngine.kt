@@ -303,10 +303,14 @@ object ShiftSwapEngine {
                 for (off in pat.offsets) {
                     val stepDate = targetDate.plusDays(off.dayOffset.toLong())
                     if (abs(ChronoUnit.DAYS.between(targetDate, stepDate)) > maxDays) { ok = false; break }
-                    val st = ShiftType.entries.getOrNull(off.shiftTypeOrdinal) ?: run { ok = false; break }
-                    val fromK = roles.getOrNull(off.fromRoleIndex) ?: run { ok = false; break }
-                    val toK = roles.getOrNull(off.toRoleIndex) ?: run { ok = false; break }
-                    val sched = schedules[stepDate.toString()] ?: run { ok = false; break }
+                    val st = ShiftType.entries.getOrNull(off.shiftTypeOrdinal)
+                    val fromK = roles.getOrNull(off.fromRoleIndex)
+                    val toK = roles.getOrNull(off.toRoleIndex)
+                    val sched = schedules[stepDate.toString()]
+                    if (st == null || fromK == null || toK == null || sched == null) {
+                        ok = false
+                        break
+                    }
                     if (!sched.kipFor(st).equals(fromK, ignoreCase = true)) { ok = false; break }
                     steps.add(SwapStep(stepDate.toString(), st, fromK, toK))
                 }
