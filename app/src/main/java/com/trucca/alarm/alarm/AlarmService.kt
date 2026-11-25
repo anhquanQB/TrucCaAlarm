@@ -16,8 +16,12 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import com.trucca.alarm.data.ScheduleRepository
 
@@ -68,6 +72,7 @@ class AlarmService : Service() {
                 startAlarmNotification(activeTitle, watchBody, activeStage, stopPending)
                 startSoundAndVibration()
                 startWatchAlertBursts(activeTitle, watchBody, stopPending)
+                triggerWatchWakeCallIfEnabled()
             }
         }
         return START_STICKY
@@ -202,6 +207,26 @@ class AlarmService : Service() {
 
         try {
             startActivity(fullScreenIntent)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun triggerWatchWakeCallIfEnabled() {
+        try {
+            val settings = ScheduleRepository(this).getSettings()
+            if (!settings.watchSyncEnabled || !settings.watchAutoCallEnabled) return
+            val rawNumber = settings.watchCallNumber.trim()
+            val sanitized = rawNumber.filter { it.isDigit() || it == '+' }
+            if (sanitized.length < 3) return
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+            val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$sanitized")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(callIntent)
         } catch (_: Exception) {
         }
     }
