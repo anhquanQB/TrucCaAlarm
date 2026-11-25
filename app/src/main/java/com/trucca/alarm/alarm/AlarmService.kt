@@ -119,18 +119,19 @@ class AlarmService : Service() {
         var sent = 0
         val runner = object : Runnable {
             override fun run() {
-                if (sent > 0) {
-                    nm.cancel(8800 + ((sent - 1) % 30))
+                if (sent > 1) {
+                    nm.cancel(8800 + ((sent - 2) % 30))
                 }
                 sent++
+                val tagTitle = if (sent == 1) title else "$title (#$sent)"
                 WatchNotifier.sendWatchAlert(
                     context = this@AlarmService,
-                    title = "$title (#$sent)",
+                    title = tagTitle,
                     body = detail,
                     notificationId = 8800 + (sent % 30),
                     stopPendingIntent = stopPending
                 )
-                watchHandler.postDelayed(this, 3_000L)
+                watchHandler.postDelayed(this, 5_000L)
             }
         }
         watchRunnable = runner
@@ -228,7 +229,7 @@ class AlarmService : Service() {
                 @Suppress("DEPRECATION")
                 getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 0))
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 350), 0))
         } catch (_: Exception) {
         }
     }
