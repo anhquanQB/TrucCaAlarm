@@ -124,14 +124,17 @@ class AlarmService : Service() {
                 }
                 sent++
                 val tagTitle = if (sent == 1) title else "$title (#$sent)"
-                WatchNotifier.sendWatchAlert(
-                    context = this@AlarmService,
-                    title = tagTitle,
-                    body = detail,
-                    notificationId = 8800 + (sent % 30),
-                    stopPendingIntent = stopPending
-                )
-                watchHandler.postDelayed(this, 5_000L)
+                try {
+                    WatchNotifier.sendWatchAlert(
+                        context = this@AlarmService,
+                        title = tagTitle,
+                        body = detail,
+                        notificationId = 8800 + (sent % 30),
+                        stopPendingIntent = stopPending
+                    )
+                } catch (_: Exception) {
+                }
+                watchHandler.postDelayed(this, 4_000L)
             }
         }
         watchRunnable = runner
@@ -229,7 +232,7 @@ class AlarmService : Service() {
                 @Suppress("DEPRECATION")
                 getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 350), 0))
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 800, 300), 0))
         } catch (_: Exception) {
         }
     }
