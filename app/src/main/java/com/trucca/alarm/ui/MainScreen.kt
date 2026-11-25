@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -925,12 +926,14 @@ private fun CalendarTab(
         }
 
         val daysInMonth = (1..currentMonth.lengthOfMonth()).toList()
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp)
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val dynamicBottomPadding = (maxHeight - 72.dp).coerceAtLeast(12.dp)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = dynamicBottomPadding)
+            ) {
             items(daysInMonth) { dayNum ->
                 val date = currentMonth.atDay(dayNum)
                 val sched = monthSchedules[date.toString()] ?: DaySchedule(date.toString(), "-", "-", "-")
@@ -990,6 +993,7 @@ private fun CalendarTab(
                     }
                 }
             }
+        }
         }
     }
 
