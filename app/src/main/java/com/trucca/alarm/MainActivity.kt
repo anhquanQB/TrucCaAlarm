@@ -18,9 +18,13 @@ import kotlinx.coroutines.withContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.trucca.alarm.model.GlassThemeId
+import kotlinx.coroutines.delay
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -66,14 +70,41 @@ class MainActivity : ComponentActivity() {
         ShiftWidgetProvider.updateAllWidgets(this)
 
         setContent {
-            TrucCaTheme(themeId = appSettings.resolvedTheme()) {
+            var activeTheme by remember(appSettings.themeId, appSettings.autoRandomThemeEnabled) {
+                mutableStateOf(appSettings.resolvedTheme())
+            }
+
+            // Balanced shuffle bag: every color appears equally in random order, changing every 60s
+            LaunchedEffect(appSettings.autoRandomThemeEnabled) {
+                if (appSettings.autoRandomThemeEnabled) {
+                    val bag = mutableListOf<GlassThemeId>()
+                    var lastTheme = activeTheme
+                    while (true) {
+                        delay(60_000L)
+                        if (bag.isEmpty()) {
+                            bag.addAll(GlassThemeId.entries.shuffled())
+                            if (bag.size > 1 && bag.first() == lastTheme) {
+                                val first = bag.removeAt(0)
+                                bag.add(first)
+                            }
+                        }
+                        val nextTheme = bag.removeAt(0)
+                        lastTheme = nextTheme
+                        activeTheme = nextTheme
+                    }
+                } else {
+                    activeTheme = appSettings.resolvedTheme()
+                }
+            }
+
+            TrucCaTheme(themeId = activeTheme) {
                 MainScreen(
                     repo = repo,
                     settings = appSettings,
                     statusMessage = statusMessage,
                     onClearStatus = { statusMessage = null },
                     onSettingsChanged = { updated ->
-                        val onlyThemeChanged = updated.copy(themeId = appSettings.themeId) == appSettings
+                        val onlyThemeChanged = updated.copy(themeId = appSettings.themeId, autoRandomThemeEnabled = appSettings.autoRandomThemeEnabled) == appSettings
                         appSettings = updated
                         repo.saveSettings(updated)
                         if (!onlyThemeChanged) {
