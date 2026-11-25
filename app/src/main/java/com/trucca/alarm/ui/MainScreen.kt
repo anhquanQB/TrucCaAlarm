@@ -404,6 +404,11 @@ private fun HomeTab(
                 }
 
                 // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
+                WeatherPillBadge(
+                    weather = weather,
+                    onClick = onRefreshWeather
+                )
+
                 if (kipExpanded) {
                     GlassPanel(
                         modifier = Modifier.fillMaxWidth(),
