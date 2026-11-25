@@ -1,8 +1,5 @@
 package com.trucca.alarm.ui
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.os.Build
 import android.view.WindowManager
 import androidx.compose.animation.animateColorAsState
@@ -122,7 +119,6 @@ fun MainScreen(
     LaunchedEffect(Unit) { weatherInfo = fetchQuangTrachWeather() }
     val showInfo: (String, String) -> Unit = { t, m -> infoDialogData = t to m }
 
-    // Lightweight 1-second ticker reading from in-memory cached repository
     LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
@@ -361,7 +357,7 @@ private fun HomeTab(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
             Column(
@@ -418,11 +414,6 @@ private fun HomeTab(
                     }
                 }
 
-                WeatherPillBadge(
-                    weather = weather,
-                    onClick = onRefreshWeather
-                )
-
                 // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
                 if (kipExpanded) {
                     GlassPanel(
@@ -472,9 +463,14 @@ private fun HomeTab(
             }
         }
 
-        // Liquid Glass Hero Card
+        // Liquid Glass Hero Card (with compact Weather pill integrated cleanly inside header row)
         item {
-            ActiveShiftHeroCard(activeShift = activeShift, settings = settings)
+            ActiveShiftHeroCard(
+                activeShift = activeShift,
+                settings = settings,
+                weather = weather,
+                onRefreshWeather = onRefreshWeather
+            )
         }
 
         item {
@@ -516,7 +512,9 @@ private fun HomeTab(
 @Composable
 private fun ActiveShiftHeroCard(
     activeShift: ActiveShiftInfo?,
-    settings: AppSettings
+    settings: AppSettings,
+    weather: WeatherInfo?,
+    onRefreshWeather: () -> Unit
 ) {
     val p = LocalGlassPalette.current
     val shape = RoundedCornerShape(28.dp)
@@ -541,7 +539,7 @@ private fun ActiveShiftHeroCard(
             .background(baseGradient)
             .background(glassSheen)
             .border(1.2.dp, rimBorder, shape)
-            .padding(22.dp)
+            .padding(20.dp)
     ) {
         if (activeShift != null) {
             val range = settings.shiftTimeConfig.formattedRange(activeShift.shiftType)
@@ -553,48 +551,57 @@ private fun ActiveShiftHeroCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text(
                             text = "ĐANG TRỰC",
                             color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.6.sp
+                            letterSpacing = 1.4.sp
                         )
                         if (isMyKip) {
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(p.highlightYellow)
-                                    .padding(horizontal = 9.dp, vertical = 3.dp)
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     text = "CA CỦA TÔI",
                                     color = Color(0xFF0F172A),
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
+                        WeatherPillBadge(
+                            weather = weather,
+                            onClick = onRefreshWeather
+                        )
                     }
+                    Spacer(modifier = Modifier.width(6.dp))
                     ShiftMascotIcon(shiftType = activeShift.shiftType)
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Kíp ${activeShift.kip} • ${activeShift.shiftType.displayName}",
                     color = Color.White,
-                    fontSize = 30.sp,
+                    fontSize = 29.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 Text(
                     text = "$range · còn $remainingText",
                     color = Color.White.copy(alpha = 0.88f),
-                    fontSize = 17.sp
+                    fontSize = 16.sp
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 LinearProgressIndicator(
                     progress = { progress.coerceIn(0f, 1f) },
                     modifier = Modifier
@@ -604,23 +611,38 @@ private fun ActiveShiftHeroCard(
                     color = if (isMyKip) p.highlightYellow else Color.White.copy(alpha = 0.88f),
                     trackColor = Color.White.copy(alpha = 0.22f)
                 )
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = activeShift.membersText.ifBlank { "Chưa cập nhật nhân sự Kíp ${activeShift.kip}" },
                     color = Color.White.copy(alpha = 0.95f),
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp
                 )
             }
         } else {
             Column {
-                Text(
-                    text = "ĐANG TRỰC",
-                    color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.6.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "ĐANG TRỰC",
+                            color = Color.White.copy(alpha = 0.78f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.4.sp
+                        )
+                        WeatherPillBadge(
+                            weather = weather,
+                            onClick = onRefreshWeather
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Chưa có dữ liệu hôm nay",
