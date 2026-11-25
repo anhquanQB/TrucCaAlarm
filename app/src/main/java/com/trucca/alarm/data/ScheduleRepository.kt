@@ -6,6 +6,7 @@ import com.google.gson.reflect.TypeToken
 import com.trucca.alarm.model.ActiveShiftInfo
 import com.trucca.alarm.model.AppSettings
 import com.trucca.alarm.model.DaySchedule
+import com.trucca.alarm.model.LearnedSwapPattern
 import com.trucca.alarm.model.DefaultScheduleData
 import com.trucca.alarm.model.ShiftType
 import com.trucca.alarm.model.UpcomingShiftInfo
@@ -184,10 +185,43 @@ class ScheduleRepository(context: Context) {
         return result
     }
 
+    fun getLearnedSwapPatterns(): List<LearnedSwapPattern> {
+        cachedLearnedPatterns?.let { return it }
+        val raw = prefs.getString(KEY_LEARNED_SWAPS, null)
+        val loaded: List<LearnedSwapPattern> = if (raw.isNullOrBlank()) {
+            emptyList()
+        } else {
+            try {
+                val type = object : TypeToken<List<LearnedSwapPattern>>() {}.type
+                gson.fromJson(raw, type) ?: emptyList()
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+        cachedLearnedPatterns = loaded
+        return loaded
+    }
+
+    fun saveLearnedSwapPattern(pattern: LearnedSwapPattern) {
+        val updated = (getLearnedSwapPatterns() + pattern).takeLast(30)
+        cachedLearnedPatterns = updated
+        prefs.edit().putString(KEY_LEARNED_SWAPS, gson.toJson(updated)).apply()
+    }
+
+    fun deleteLearnedSwapPattern(id: String) {
+        val updated = getLearnedSwapPatterns().filterNot { it.id == id }
+        cachedLearnedPatterns = updated
+        prefs.edit().putString(KEY_LEARNED_SWAPS, gson.toJson(updated)).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "truc_ca_prefs"
         private const val KEY_SETTINGS = "app_settings"
         private const val KEY_SCHEDULES = "day_schedules"
+        private const val KEY_LEARNED_SWAPS = "learned_swap_patterns"
+
+        @Volatile
+        private var cachedLearnedPatterns: List<LearnedSwapPattern>? = null
 
         @Volatile
         private var cachedSettings: AppSettings? = null
