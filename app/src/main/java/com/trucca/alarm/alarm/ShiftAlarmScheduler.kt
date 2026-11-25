@@ -17,7 +17,6 @@ object ShiftAlarmScheduler {
     private const val MAX_SCHEDULED_ALARMS = 14
     private const val BASE_REQUEST_CODE = 5000
     private const val TEST_REQUEST_CODE = 9999
-    private const val SNOOZE_REQUEST_CODE = 9998
 
     fun rescheduleAll(context: Context): Int {
         cancelAll(context)
@@ -27,11 +26,10 @@ object ShiftAlarmScheduler {
 
         val now = LocalDateTime.now()
         val upcoming = repo.getUpcomingShiftsForKip(settings.selectedKip, now, MAX_SCHEDULED_ALARMS)
-        val allSchedules = repo.getAllSchedules()
         var scheduledCount = 0
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+        val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
 
         upcoming.forEachIndexed { index, shift ->
             if (shift.alarmDateTime.isAfter(now)) {
@@ -40,10 +38,7 @@ object ShiftAlarmScheduler {
                     .toInstant()
                     .toEpochMilli()
 
-
-
                 val range = settings.shiftTimeConfig.formattedRange(shift.shiftType)
-                val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
                 val title = "${shift.shiftType.displayName} • Kíp ${shift.kip}"
                 val lunarTag = LunarCalendarUtil.fromSolar(shift.shiftDate).compactTag()
                 val detail = "$range • ${shift.shiftDate.format(dateFmt)} $lunarTag"
@@ -66,7 +61,6 @@ object ShiftAlarmScheduler {
         val repo = ScheduleRepository(context)
         val settings = repo.getSettings()
         val nextShift = repo.getUpcomingShiftsForKip(settings.selectedKip, LocalDateTime.now(), 1).firstOrNull()
-        val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
         val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
 
         val shiftTitle = if (nextShift != null) {
@@ -91,36 +85,7 @@ object ShiftAlarmScheduler {
             requestCode = TEST_REQUEST_CODE,
             triggerAtMillis = triggerAtMillis,
             title = shiftTitle,
-            detail = detail,
-            stage = 3
-        )
-    }
-
-    fun scheduleSnooze(context: Context, title: String, detail: String, stage: Int, minutes: Long = 5) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val triggerAtMillis = System.currentTimeMillis() + minutes * 60_000L
-        scheduleExact(
-            context = context,
-            alarmManager = alarmManager,
-            requestCode = SNOOZE_REQUEST_CODE,
-            triggerAtMillis = triggerAtMillis,
-            title = title,
-            detail = detail,
-            stage = stage
-        )
-    }
-
-    fun scheduleFollowUpStage(context: Context, title: String, detail: String, nextStage: Int, delayMinutes: Long) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 60_000L
-        scheduleExact(
-            context = context,
-            alarmManager = alarmManager,
-            requestCode = 9990 + nextStage,
-            triggerAtMillis = triggerAtMillis,
-            title = title,
-            detail = detail,
-            stage = nextStage
+            detail = detail
         )
     }
 
@@ -143,13 +108,11 @@ object ShiftAlarmScheduler {
         requestCode: Int,
         triggerAtMillis: Long,
         title: String,
-        detail: String,
-        stage: Int = 1
+        detail: String
     ) {
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra(AlarmService.EXTRA_TITLE, title)
             putExtra(AlarmService.EXTRA_DETAIL, detail)
-            putExtra(AlarmService.EXTRA_STAGE, stage)
         }
         val operation = PendingIntent.getBroadcast(
             context,
