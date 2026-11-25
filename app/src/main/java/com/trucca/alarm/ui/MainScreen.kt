@@ -1,5 +1,10 @@
 package com.trucca.alarm.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -41,7 +46,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -54,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,15 +68,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogWindowProvider
 import com.trucca.alarm.data.ScheduleRepository
 import com.trucca.alarm.model.ActiveShiftInfo
 import com.trucca.alarm.model.AppSettings
@@ -147,6 +154,12 @@ fun MainScreen(
                         settings = settings,
                         activeShift = activeShift,
                         upcomingMyShifts = upcomingMyShifts,
+                        weather = weatherInfo,
+                        onRefreshWeather = {
+                            coroutineScope.launch {
+                                weatherInfo = fetchQuangTrachWeather()
+                            }
+                        },
                         onSelectKip = { kip ->
                             onSettingsChanged(settings.copy(selectedKip = kip))
                         }
@@ -327,6 +340,8 @@ private fun HomeTab(
     settings: AppSettings,
     activeShift: ActiveShiftInfo?,
     upcomingMyShifts: List<UpcomingShiftInfo>,
+    weather: WeatherInfo?,
+    onRefreshWeather: () -> Unit,
     onSelectKip: (String) -> Unit
 ) {
     val p = LocalGlassPalette.current
@@ -403,12 +418,12 @@ private fun HomeTab(
                     }
                 }
 
-                // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
                 WeatherPillBadge(
                     weather = weather,
                     onClick = onRefreshWeather
                 )
 
+                // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
                 if (kipExpanded) {
                     GlassPanel(
                         modifier = Modifier.fillMaxWidth(),
@@ -461,8 +476,6 @@ private fun HomeTab(
         item {
             ActiveShiftHeroCard(activeShift = activeShift, settings = settings)
         }
-
-
 
         item {
             MyShiftCountdownCard(
@@ -1288,7 +1301,7 @@ private fun SettingsTab(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (watchSyncEnabled) "Rung dồn dập mỗi 3 giây • Chạm để thử ▾" else "Đang tắt đẩy đồng hồ ▾",
+                            text = if (watchSyncEnabled) "Rung dồn dập • Chạm để thử ▾" else "Đang tắt đẩy đồng hồ ▾",
                             color = p.mutedText,
                             fontSize = 13.sp
                         )
@@ -1447,7 +1460,7 @@ private fun SettingsTab(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    text = "Khi báo thức kêu, ứng dụng đẩy rung dồn dập mỗi 3 giây sang đồng hồ cho tới khi bạn bấm Tắt báo thức hoặc Hủy.",
+                    text = "Khi báo thức kêu, ứng dụng đẩy tín hiệu rung dồn dập sang đồng hồ cho tới khi bạn bấm Tắt báo thức hoặc Hủy.",
                     color = p.mutedText,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -1505,7 +1518,21 @@ private fun BouncyGlassDialog(
     onDismissRequest: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    val p = LocalGlassPalette.current
     Dialog(onDismissRequest = onDismissRequest) {
+        val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+        SideEffect {
+            dialogWindowProvider?.window?.let { win ->
+                win.setDimAmount(0.32f)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    win.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                    win.attributes = win.attributes.apply {
+                        blurBehindRadius = 48
+                    }
+                }
+            }
+        }
+
         var visible by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { visible = true }
 
@@ -1523,6 +1550,13 @@ private fun BouncyGlassDialog(
             label = "popup_alpha"
         )
 
+        val frostedTint = Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF0E131F).copy(alpha = 0.82f),
+                Color(0xFF0A0E17).copy(alpha = 0.88f)
+            )
+        )
+
         GlassPanel(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1530,9 +1564,12 @@ private fun BouncyGlassDialog(
                     scaleX = scale
                     scaleY = scale
                     this.alpha = alpha
-                },
+                }
+                .clip(RoundedCornerShape(26.dp))
+                .background(frostedTint)
+                .background(p.reflectionPrimary.copy(alpha = 0.08f)),
             cornerRadius = 26.dp,
-            alphaBoost = 0.08f
+            alphaBoost = 0.14f
         ) {
             Box(modifier = Modifier.padding(20.dp)) {
                 content()
