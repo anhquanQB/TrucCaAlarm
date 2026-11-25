@@ -75,6 +75,7 @@ data class ShiftTimeConfig(
 data class AppSettings(
     val selectedKip: String = "A",
     val themeId: String = GlassThemeId.OCEAN.name,
+    val autoRandomThemeEnabled: Boolean = false,
     val alarmEnabled: Boolean = true,
     val morningAlarmBeforeMin: Int = 60,
     val afternoonAlarmBeforeMin: Int = 60,
