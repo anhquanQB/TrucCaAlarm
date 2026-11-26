@@ -53,7 +53,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -231,14 +230,15 @@ fun MainScreen(
         infoDialogData?.let { (infoTitle, infoBody) ->
             BouncyGlassDialog(onDismissRequest = { infoDialogData = null }) {
                 val p = LocalGlassPalette.current
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(infoTitle, color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(infoBody, color = p.mutedText, fontSize = 14.sp, lineHeight = 20.sp)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { infoDialogData = null }) {
-                            Text("Đã hiểu", color = p.accent, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                    DialogActionBar(
+                        primaryLabel = "Đã hiểu",
+                        onPrimary = { infoDialogData = null },
+                        dismissLabel = "Đóng",
+                        onDismiss = { infoDialogData = null }
+                    )
                 }
             }
         }
@@ -246,17 +246,99 @@ fun MainScreen(
         if (!statusMessage.isNullOrBlank()) {
             BouncyGlassDialog(onDismissRequest = onClearStatus) {
                 val p = LocalGlassPalette.current
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Thông báo", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(statusMessage, color = p.mutedText, fontSize = 14.sp, lineHeight = 20.sp)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = {
+                    DialogActionBar(
+                        dismissLabel = "Đóng",
+                        onDismiss = {
                             schedulesVersion++
                             onClearStatus()
-                        }) { Text("Đóng", color = p.accent, fontWeight = FontWeight.Bold) }
-                    }
+                        }
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DialogActionBar(
+    primaryLabel: String? = null,
+    onPrimary: (() -> Unit)? = null,
+    secondaryLabel: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    dismissLabel: String,
+    onDismiss: () -> Unit
+) {
+    val p = LocalGlassPalette.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (primaryLabel != null && onPrimary != null) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(p.accent.copy(alpha = 0.34f))
+                    .border(1.dp, p.accent.copy(alpha = 0.85f), RoundedCornerShape(14.dp))
+                    .clickable(onClick = onPrimary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = primaryLabel,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+        }
+        if (secondaryLabel != null && onSecondary != null) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(p.highlightYellow.copy(alpha = 0.24f))
+                    .border(1.dp, p.highlightYellow.copy(alpha = 0.75f), RoundedCornerShape(14.dp))
+                    .clickable(onClick = onSecondary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = secondaryLabel,
+                    color = p.softWhite,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White.copy(alpha = 0.16f))
+                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = dismissLabel,
+                color = p.softWhite,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
         }
     }
 }
@@ -426,7 +508,6 @@ private fun HomeTab(
                             fontSize = 12.sp
                         )
                     }
-                    // Dynamic Island Morphing Pill
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(islandCorner))
@@ -451,7 +532,6 @@ private fun HomeTab(
                     }
                 }
 
-                // Expanded Dynamic Island Glass Strip (morphs smoothly in/out)
                 if (kipExpanded) {
                     GlassPanel(
                         modifier = Modifier.fillMaxWidth(),
@@ -500,7 +580,6 @@ private fun HomeTab(
             }
         }
 
-        // Liquid Glass Hero Card
         item {
             ActiveShiftHeroCard(
                 activeShift = activeShift,
@@ -1184,30 +1263,25 @@ private fun EditDayDialog(
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onOpenSwap) {
-                    Text("Đổi ca ngày này", color = p.highlightYellow, fontWeight = FontWeight.Bold)
-                }
-                Row {
-                    TextButton(onClick = onDismiss) { Text("Hủy", color = p.mutedText) }
-                    TextButton(onClick = {
-                        onSave(
-                            day.copy(
-                                morningKip = morning.trim(),
-                                afternoonKip = afternoon.trim(),
-                                nightKip = night.trim(),
-                                morningMembers = morningMembers.trim(),
-                                afternoonMembers = afternoonMembers.trim(),
-                                nightMembers = nightMembers.trim()
-                            )
+            DialogActionBar(
+                primaryLabel = "Lưu",
+                onPrimary = {
+                    onSave(
+                        day.copy(
+                            morningKip = morning.trim(),
+                            afternoonKip = afternoon.trim(),
+                            nightKip = night.trim(),
+                            morningMembers = morningMembers.trim(),
+                            afternoonMembers = afternoonMembers.trim(),
+                            nightMembers = nightMembers.trim()
                         )
-                    }) { Text("Lưu", color = p.accent, fontWeight = FontWeight.Bold) }
-                }
-            }
+                    )
+                },
+                secondaryLabel = "Đổi ca",
+                onSecondary = onOpenSwap,
+                dismissLabel = "Hủy",
+                onDismiss = onDismiss
+            )
         }
     }
 }
@@ -1225,7 +1299,7 @@ private fun ShiftSwapDialog(
     val p = LocalGlassPalette.current
     val allSchedules = remember { repo.getAllSchedules() }
     val myKip = settings.selectedKip
-    var mode by remember { mutableIntStateOf(0) } // 0 = Gợi ý, 1 = Tự đổi & Kiểm tra, 2 = Dạy app
+    var mode by remember { mutableIntStateOf(0) }
 
     val myShiftOptions = remember(allSchedules, myKip, initialDate) {
         val list = mutableListOf<Pair<LocalDate, ShiftType>>()
@@ -1292,7 +1366,6 @@ private fun ShiftSwapDialog(
                 fontWeight = FontWeight.Bold
             )
 
-            // 3 compact mode pills
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("Gợi ý", "Tự đổi", "Dạy app").forEachIndexed { idx, label ->
                     val active = mode == idx
@@ -1320,7 +1393,6 @@ private fun ShiftSwapDialog(
                 }
             }
 
-            // Target shift selector
             if (selectedTarget != null) {
                 Row(
                     modifier = Modifier
@@ -1406,12 +1478,24 @@ private fun ShiftSwapDialog(
                             if (partnerText.isNotBlank()) {
                                 Text(partnerText, color = p.mutedText, fontSize = 11.sp, maxLines = 2)
                             }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                TextButton(onClick = {
-                                    val updated = ShiftSwapEngine.applySwap(allSchedules, sug.steps)
-                                    onApplySwap(updated)
-                                }) {
-                                    Text("Áp dụng đổi ca", color = p.highlightYellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(p.highlightYellow.copy(alpha = 0.22f))
+                                        .border(1.dp, p.highlightYellow.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            val updated = ShiftSwapEngine.applySwap(allSchedules, sug.steps)
+                                            onApplySwap(updated)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "Áp dụng đổi ca",
+                                        color = p.highlightYellow,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -1584,9 +1668,10 @@ private fun ShiftSwapDialog(
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Đóng", color = p.accent) }
-            }
+            DialogActionBar(
+                dismissLabel = "Đóng",
+                onDismiss = onDismiss
+            )
         }
     }
 }
@@ -1818,7 +1903,6 @@ private fun SettingsTab(
             }
         }
 
-        // 1. Compact Theme Card
         item {
             val tp = paletteFor(selectedTheme)
             GlassPanel(
@@ -1861,7 +1945,6 @@ private fun SettingsTab(
             }
         }
 
-        // 2. Compact Alarm Card
         item {
             GlassPanel(
                 modifier = Modifier
@@ -1903,7 +1986,6 @@ private fun SettingsTab(
             }
         }
 
-        // 3. Compact Huawei Watch GT 6 Pro Card
         item {
             GlassPanel(
                 modifier = Modifier
@@ -1945,7 +2027,6 @@ private fun SettingsTab(
             }
         }
 
-        // 4. Compact Crew Card
         item {
             val currentCrew = membersMap[settings.selectedKip].orEmpty()
             GlassPanel(
@@ -1982,7 +2063,6 @@ private fun SettingsTab(
         }
     }
 
-    // Pop-up 1: Theme Picker (BouncyGlassDialog)
     if (showThemePopup) {
         BouncyGlassDialog(onDismissRequest = { showThemePopup = false }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1997,10 +2077,10 @@ private fun SettingsTab(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(if (active) tp.heroStart.copy(alpha = 0.32f) else Color.White.copy(alpha = 0.07f))
+                                        .background(if (active) tp.heroStart.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.08f))
                                         .border(
                                             width = if (active) 1.5.dp else 1.dp,
-                                            color = if (active) tp.accent else Color.White.copy(alpha = 0.18f),
+                                            color = if (active) tp.accent else Color.White.copy(alpha = 0.20f),
                                             shape = RoundedCornerShape(14.dp)
                                         )
                                         .clickable {
@@ -2030,10 +2110,10 @@ private fun SettingsTab(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(if (autoRandomTheme) p.accent.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.07f))
+                                        .background(if (autoRandomTheme) p.accent.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f))
                                         .border(
                                             width = if (autoRandomTheme) 1.5.dp else 1.dp,
-                                            color = if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.18f),
+                                            color = if (autoRandomTheme) p.accent else Color.White.copy(alpha = 0.20f),
                                             shape = RoundedCornerShape(14.dp)
                                         )
                                         .clickable {
@@ -2097,14 +2177,14 @@ private fun SettingsTab(
                         }
                     }
                 }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { showThemePopup = false }) { Text("Đóng", color = p.accent) }
-                }
+                DialogActionBar(
+                    dismissLabel = "Đóng",
+                    onDismiss = { showThemePopup = false }
+                )
             }
         }
     }
 
-    // Pop-up 2: Alarm Lead Time & Test (BouncyGlassDialog)
     if (showAlarmPopup) {
         BouncyGlassDialog(onDismissRequest = { showAlarmPopup = false }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2130,32 +2210,27 @@ private fun SettingsTab(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = {
-                            onSave(buildUpdatedSettings())
-                            showAlarmPopup = false
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Lưu") }
-                    OutlinedButton(
-                        onClick = {
-                            showAlarmPopup = false
-                            onTestAlarm()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Thử chuông") }
-                }
+                DialogActionBar(
+                    primaryLabel = "Lưu",
+                    onPrimary = {
+                        onSave(buildUpdatedSettings())
+                        showAlarmPopup = false
+                    },
+                    secondaryLabel = "Thử chuông",
+                    onSecondary = {
+                        showAlarmPopup = false
+                        onTestAlarm()
+                    },
+                    dismissLabel = "Đóng",
+                    onDismiss = { showAlarmPopup = false }
+                )
             }
         }
     }
 
-    // Pop-up 3: Huawei Watch Test (BouncyGlassDialog)
     if (showWatchPopup) {
         BouncyGlassDialog(onDismissRequest = { showWatchPopup = false }) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     text = "Hệ thống rung nhịp thông báo liên tục 1 giờ (mỗi 2,2 giây/nhịp) sang đồng hồ khi đến giờ trực.",
@@ -2163,30 +2238,23 @@ private fun SettingsTab(
                     fontSize = 13.sp,
                     lineHeight = 19.sp
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            onSave(buildUpdatedSettings())
-                            showWatchPopup = false
-                            onTestWatchNotification()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Thử rung đồng hồ") }
-                    Button(
-                        onClick = {
-                            onSave(buildUpdatedSettings())
-                            showWatchPopup = false
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) { Text("Đóng") }
-                }
+                DialogActionBar(
+                    primaryLabel = "Thử rung đồng hồ",
+                    onPrimary = {
+                        onSave(buildUpdatedSettings())
+                        showWatchPopup = false
+                        onTestWatchNotification()
+                    },
+                    dismissLabel = "Đóng",
+                    onDismiss = {
+                        onSave(buildUpdatedSettings())
+                        showWatchPopup = false
+                    }
+                )
             }
         }
     }
 
-    // Pop-up 4: Default Crew Editor (BouncyGlassDialog)
     if (showCrewPopup) {
         BouncyGlassDialog(onDismissRequest = { showCrewPopup = false }) {
             val crewScroll = rememberScrollState()
@@ -2215,13 +2283,15 @@ private fun SettingsTab(
                         maxLines = 2
                     )
                 }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { showCrewPopup = false }) { Text("Hủy", color = p.mutedText) }
-                    TextButton(onClick = {
+                DialogActionBar(
+                    primaryLabel = "Lưu danh sách",
+                    onPrimary = {
                         onSave(buildUpdatedSettings())
                         showCrewPopup = false
-                    }) { Text("Lưu danh sách", color = p.accent, fontWeight = FontWeight.Bold) }
-                }
+                    },
+                    dismissLabel = "Hủy",
+                    onDismiss = { showCrewPopup = false }
+                )
             }
         }
     }
@@ -2237,7 +2307,7 @@ private fun BouncyGlassDialog(
         val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
         SideEffect {
             dialogWindowProvider?.window?.let { win ->
-                win.setDimAmount(0.32f)
+                win.setDimAmount(0.45f)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     win.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
                     win.attributes = win.attributes.apply {
@@ -2266,8 +2336,9 @@ private fun BouncyGlassDialog(
 
         val frostedTint = Brush.verticalGradient(
             colors = listOf(
-                Color(0xFF0E131F).copy(alpha = 0.82f),
-                Color(0xFF0A0E17).copy(alpha = 0.88f)
+                Color(0xFF101726).copy(alpha = 0.87f),
+                p.reflectionPrimary.copy(alpha = 0.14f),
+                Color(0xFF0B101C).copy(alpha = 0.92f)
             )
         )
 
@@ -2280,10 +2351,9 @@ private fun BouncyGlassDialog(
                     this.alpha = alpha
                 }
                 .clip(RoundedCornerShape(26.dp))
-                .background(frostedTint)
-                .background(p.reflectionPrimary.copy(alpha = 0.08f)),
+                .background(frostedTint),
             cornerRadius = 26.dp,
-            alphaBoost = 0.14f
+            alphaBoost = 0.16f
         ) {
             Box(modifier = Modifier.padding(20.dp)) {
                 content()
