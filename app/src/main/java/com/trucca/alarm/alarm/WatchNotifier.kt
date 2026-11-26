@@ -9,28 +9,29 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import androidx.core.app.NotificationCompat
 import com.trucca.alarm.MainActivity
+import com.trucca.alarm.R
 
 object WatchNotifier {
 
-    const val WATCH_CHANNEL_ID = "trucca_huawei_watch_call_v5"
+    const val WATCH_CHANNEL_ID = "trucca_huawei_watch_msg_v4"
 
     fun ensureChannel(context: Context) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         val audioAttrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_REQUEST)
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         val channel = NotificationChannel(
             WATCH_CHANNEL_ID,
-            "Cuộc gọi báo thức Huawei Watch",
+            "Thông báo đồng hồ Huawei Watch",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Kênh thông báo cuộc gọi đến để Huawei Sức khỏe rung liên hồi trên đồng hồ"
+            description = "Kênh đồng bộ thông báo và rung nhịp sang Huawei Watch GT 6 Pro"
             setSound(soundUri, audioAttrs)
             enableVibration(true)
             enableLights(true)
-            vibrationPattern = longArrayOf(0, 1000, 200, 1000)
+            vibrationPattern = longArrayOf(0, 800, 200, 800)
         }
         nm.createNotificationChannel(channel)
     }
@@ -41,7 +42,7 @@ object WatchNotifier {
         body: String,
         notificationId: Int,
         stopPendingIntent: PendingIntent? = null,
-        isCallAlert: Boolean = true
+        isCallAlert: Boolean = false
     ) {
         ensureChannel(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -51,9 +52,17 @@ object WatchNotifier {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val cancelAlarmPi = stopPendingIntent ?: PendingIntent.getService(
+            context,
+            notificationId + 5000,
+            Intent(context, AlarmService::class.java).apply {
+                action = AlarmService.ACTION_CANCEL_1H
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val builder = NotificationCompat.Builder(context, WATCH_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -64,21 +73,27 @@ object WatchNotifier {
             .setOngoing(false)
             .setOnlyAlertOnce(false)
             .setContentIntent(contentPending)
-
-        if (stopPendingIntent != null) {
-            builder.addAction(0, "Từ chối / Tắt", stopPendingIntent)
-        }
+            .addAction(0, "Hủy báo thức", cancelAlarmPi)
 
         nm.notify(notificationId, builder.build())
     }
 
     fun sendTestWatchNotification(context: Context, selectedKip: String, members: String) {
+        val cancelPi = PendingIntent.getService(
+            context,
+            9901,
+            Intent(context, AlarmService::class.java).apply {
+                action = AlarmService.ACTION_CANCEL_1H
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         sendWatchAlert(
             context = context,
             title = "Ca Sáng • Kíp $selectedKip",
-            body = "07:00 – 15:00 • [Đợt 1/3]",
+            body = if (members.isNotBlank()) "07:00 – 15:00 • $members" else "07:00 – 15:00 • Thử rung đồng hồ",
             notificationId = (System.currentTimeMillis() % 100000).toInt() + 8000,
-            isCallAlert = true
+            stopPendingIntent = cancelPi,
+            isCallAlert = false
         )
     }
 }
