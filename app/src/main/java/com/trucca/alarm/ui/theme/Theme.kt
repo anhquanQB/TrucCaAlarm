@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.trucca.alarm.model.GlassThemeId
-import com.trucca.alarm.model.LunarCalendarUtil
 
 data class GlassPalette(
     val id: GlassThemeId,
@@ -30,7 +29,7 @@ data class GlassPalette(
     val heroStart: Color,
     val heroMid: Color,
     val heroEnd: Color,
-    val highlightYellow: Color, // Harmonized highlight color matching each glass tone
+    val highlightYellow: Color,
     val softWhite: Color,
     val mutedText: Color
 )
@@ -197,7 +196,7 @@ fun GlassPanel(
         colors = listOf(
             Color.White.copy(alpha = (0.17f + alphaBoost).coerceAtMost(0.28f)),
             Color.White.copy(alpha = (0.06f + alphaBoost * 0.4f).coerceAtMost(0.14f)),
-            p.reflectionPrimary.copy(alpha = 0.06f)
+            p.reflectionPrimary.copy(alpha = 0.08f)
         ),
         start = Offset(0f, 0f),
         end = Offset(800f, 800f)
