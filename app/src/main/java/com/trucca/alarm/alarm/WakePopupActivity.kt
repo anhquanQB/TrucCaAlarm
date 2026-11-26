@@ -41,8 +41,10 @@ class WakePopupActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 setBlurBehindRadius(48)
-                addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
             }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
