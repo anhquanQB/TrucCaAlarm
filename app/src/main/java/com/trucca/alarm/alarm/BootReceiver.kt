@@ -8,6 +8,7 @@ import com.trucca.alarm.widget.ShiftWidgetProvider
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ShiftAlarmScheduler.rescheduleAll(context)
+        CustomAlarmManager.rescheduleAll(context)
         ShiftWidgetProvider.updateAllWidgets(context)
     }
 }
