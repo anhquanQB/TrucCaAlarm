@@ -15,6 +15,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import com.trucca.alarm.R
 
 class AlarmService : Service() {
 
@@ -194,9 +195,15 @@ class AlarmService : Service() {
             Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val cancelPi = PendingIntent.getService(
+            this,
+            9000 + n,
+            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(shiftTitle)
             .setContentText("$shiftDetail • [Nhịp #$n]")
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -205,6 +212,7 @@ class AlarmService : Service() {
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
             .setContentIntent(snoozePi)
+            .addAction(0, "Hủy báo thức", cancelPi)
             .build()
 
         nm.notify(PULSE_ID, notif)
@@ -222,13 +230,13 @@ class AlarmService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(shiftTitle)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "HỦY 1 GIỜ", cancelPi)
+            .addAction(0, "Hủy báo thức", cancelPi)
             .build()
     }
 
