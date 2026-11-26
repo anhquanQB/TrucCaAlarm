@@ -130,6 +130,7 @@ class AlarmService : Service() {
         vibrator?.cancel()
         cancelPulseNotif()
         releaseWakeLock()
+        sendBroadcast(Intent(WakePopupActivity.ACTION_CLOSE_POPUP).setPackage(packageName))
 
         val rem = endTimeMs - System.currentTimeMillis()
         if (rem <= 0L) {
@@ -191,28 +192,22 @@ class AlarmService : Service() {
 
         val snoozePi = PendingIntent.getService(
             this,
-            n,
-            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val cancelPi = PendingIntent.getService(
-            this,
             9000 + n,
-            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
+            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setLargeIcon(WatchNotifier.loadAppAvatarBitmap(this))
             .setContentTitle(shiftTitle)
             .setContentText("$shiftDetail • [Nhịp #$n]")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setAutoCancel(true)
+            .setAutoCancel(false)
             .setOnlyAlertOnce(false)
-            .setContentIntent(snoozePi)
-            .addAction(0, "Hủy báo thức", cancelPi)
+            .addAction(0, "Hủy báo thức", snoozePi)
             .build()
 
         nm.notify(PULSE_ID, notif)
@@ -223,20 +218,22 @@ class AlarmService : Service() {
     }
 
     private fun buildFgNotif(text: String) = run {
-        val cancelPi = PendingIntent.getService(
+        val snoozePi = PendingIntent.getService(
             this,
             999,
-            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
+            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_alarm)
+            .setLargeIcon(WatchNotifier.loadAppAvatarBitmap(this))
             .setContentTitle(shiftTitle)
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(0, "Hủy báo thức", cancelPi)
+            .addAction(0, "Hủy báo thức", snoozePi)
             .build()
     }
 
