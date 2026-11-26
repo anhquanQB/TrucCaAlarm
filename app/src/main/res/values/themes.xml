@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.TrucCaAlarm" parent="Theme.AppCompat.NoActionBar" />
+    <style name="Theme.TrucCaAlarm" parent="@android:style/Theme.Material.NoActionBar" />
 </resources>
