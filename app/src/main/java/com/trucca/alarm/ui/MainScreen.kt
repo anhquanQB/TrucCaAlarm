@@ -1964,7 +1964,7 @@ private fun SettingsTab(
                             Text("Báo thức Kíp ${settings.selectedKip}", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             InfoHintButton(
                                 title = "Báo thức tự động",
-                                message = "Chạm vào thẻ để đặt số phút báo trước từng ca và thử chuông. Báo thức sẽ rung liên tục trong 1 giờ cho tới khi bạn bấm HỦY.",
+                                message = "Chạm vào thẻ để đặt số phút báo trước từng ca, thêm báo thức tự do theo giờ và thử chuông. Báo thức sẽ rung liên tục trong 1 giờ cho tới khi bạn bấm HỦY.",
                                 onShowInfo = onShowInfo
                             )
                         }
@@ -2187,7 +2187,18 @@ private fun SettingsTab(
 
     if (showAlarmPopup) {
         BouncyGlassDialog(onDismissRequest = { showAlarmPopup = false }) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val alarmScroll = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .softVerticalFade(
+                        showTopFade = alarmScroll.value > 0,
+                        showBottomFade = alarmScroll.value < alarmScroll.maxValue,
+                        topFade = UNIFORM_EDGE_FADE,
+                        bottomFade = UNIFORM_EDGE_FADE
+                    )
+                    .verticalScroll(alarmScroll),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text("Cài đặt Báo thức Kíp ${settings.selectedKip}", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = morningBefore,
@@ -2210,6 +2221,7 @@ private fun SettingsTab(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                CustomAlarmSection()
                 DialogActionBar(
                     primaryLabel = "Lưu",
                     onPrimary = {
