@@ -59,10 +59,7 @@ class WakePopupActivity : ComponentActivity() {
         }
 
         setContentView(R.layout.dialog_wake_popup)
-        val title = intent.getStringExtra(AlarmService.EXTRA_TITLE) ?: "BÁO THỨC CA TRỰC"
-        val detail = intent.getStringExtra(AlarmService.EXTRA_DETAIL) ?: ""
-        findViewById<TextView>(R.id.tvPopupTitle).text =
-            if (detail.isNotBlank()) "$title\n$detail" else title
+        bindIntentText(intent)
 
         findViewById<Button>(R.id.btnSnooze1Min).setOnClickListener {
             ContextCompat.startForegroundService(
@@ -87,6 +84,19 @@ class WakePopupActivity : ComponentActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(closeReceiver, filter)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        bindIntentText(intent)
+    }
+
+    private fun bindIntentText(sourceIntent: Intent?) {
+        val title = sourceIntent?.getStringExtra(AlarmService.EXTRA_TITLE) ?: "BÁO THỨC CA TRỰC"
+        val detail = sourceIntent?.getStringExtra(AlarmService.EXTRA_DETAIL) ?: ""
+        findViewById<TextView>(R.id.tvPopupTitle).text =
+            if (detail.isNotBlank()) "$title\n$detail" else title
     }
 
     override fun onDestroy() {
