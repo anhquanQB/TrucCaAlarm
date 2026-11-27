@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -1032,77 +1033,86 @@ private fun CalendarTab(
         }
 
         val daysInMonth = (1..currentMonth.lengthOfMonth()).toList()
-        LazyColumn(
-            state = listState,
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .softVerticalFade(
-                    showTopFade = listState.canScrollBackward,
-                    showBottomFade = listState.canScrollForward,
-                    topFade = UNIFORM_EDGE_FADE,
-                    bottomFade = UNIFORM_EDGE_FADE
-                ),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp)
         ) {
-            items(daysInMonth) { dayNum ->
-                val date = currentMonth.atDay(dayNum)
-                val sched = monthSchedules[date.toString()] ?: DaySchedule(date.toString(), "-", "-", "-")
-                val isToday = date == LocalDate.now()
+            val endScrollSpacer = (maxHeight - 64.dp).coerceAtLeast(360.dp)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .softVerticalFade(
+                        showTopFade = listState.canScrollBackward,
+                        showBottomFade = listState.canScrollForward,
+                        topFade = UNIFORM_EDGE_FADE,
+                        bottomFade = UNIFORM_EDGE_FADE
+                    ),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 0.dp)
+            ) {
+                items(daysInMonth) { dayNum ->
+                    val date = currentMonth.atDay(dayNum)
+                    val sched = monthSchedules[date.toString()] ?: DaySchedule(date.toString(), "-", "-", "-")
+                    val isToday = date == LocalDate.now()
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (isToday) p.accent.copy(alpha = 0.25f)
-                            else Color.White.copy(alpha = 0.06f)
-                        )
-                        .border(
-                            1.dp,
-                            if (isToday) p.accent.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .clickable { editingDay = sched }
-                        .padding(vertical = 8.dp, horizontal = 8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(
-                            modifier = Modifier.weight(1.2f),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = if (sched.hasCustomMembers()) "$dayNum*" else "$dayNum",
-                                color = if (isToday) p.highlightYellow else p.softWhite,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (isToday) p.accent.copy(alpha = 0.25f)
+                                else Color.White.copy(alpha = 0.06f)
                             )
-                            Text(
-                                text = "${vietnameseShortWeekday(date.dayOfWeek)} • ${LunarCalendarUtil.fromSolar(date).shortLabel()}",
-                                color = p.mutedText,
-                                fontSize = 10.sp
+                            .border(
+                                1.dp,
+                                if (isToday) p.accent.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { editingDay = sched }
+                            .padding(vertical = 8.dp, horizontal = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(
+                                modifier = Modifier.weight(1.2f),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = if (sched.hasCustomMembers()) "$dayNum*" else "$dayNum",
+                                    color = if (isToday) p.highlightYellow else p.softWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = "${vietnameseShortWeekday(date.dayOfWeek)} • ${LunarCalendarUtil.fromSolar(date).shortLabel()}",
+                                    color = p.mutedText,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            ShiftCellBadge(
+                                kip = sched.morningKip,
+                                isHighlighted = sched.morningKip == settings.selectedKip,
+                                isConflict = (date.toString() to ShiftType.MORNING) in conflictCells,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ShiftCellBadge(
+                                kip = sched.afternoonKip,
+                                isHighlighted = sched.afternoonKip == settings.selectedKip,
+                                isConflict = (date.toString() to ShiftType.AFTERNOON) in conflictCells,
+                                modifier = Modifier.weight(1f)
+                            )
+                            ShiftCellBadge(
+                                kip = sched.nightKip,
+                                isHighlighted = sched.nightKip == settings.selectedKip,
+                                isConflict = (date.toString() to ShiftType.NIGHT) in conflictCells,
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                        ShiftCellBadge(
-                            kip = sched.morningKip,
-                            isHighlighted = sched.morningKip == settings.selectedKip,
-                            isConflict = (date.toString() to ShiftType.MORNING) in conflictCells,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ShiftCellBadge(
-                            kip = sched.afternoonKip,
-                            isHighlighted = sched.afternoonKip == settings.selectedKip,
-                            isConflict = (date.toString() to ShiftType.AFTERNOON) in conflictCells,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ShiftCellBadge(
-                            kip = sched.nightKip,
-                            isHighlighted = sched.nightKip == settings.selectedKip,
-                            isConflict = (date.toString() to ShiftType.NIGHT) in conflictCells,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
+                }
+                item(key = "calendar_bottom_scroll_spacer") {
+                    Spacer(modifier = Modifier.height(endScrollSpacer))
                 }
             }
         }
@@ -1111,6 +1121,8 @@ private fun CalendarTab(
     editingDay?.let { day ->
         EditDayDialog(
             day = day,
+            settings = settings,
+            onShowInfo = onShowInfo,
             onDismiss = { editingDay = null },
             onOpenSwap = {
                 editingDay = null
@@ -1190,16 +1202,27 @@ private fun ShiftCellBadge(
 @Composable
 private fun EditDayDialog(
     day: DaySchedule,
+    settings: AppSettings,
+    onShowInfo: (String, String) -> Unit,
     onDismiss: () -> Unit,
     onOpenSwap: () -> Unit,
     onSave: (DaySchedule) -> Unit
 ) {
-    var morning by remember { mutableStateOf(day.morningKip) }
-    var afternoon by remember { mutableStateOf(day.afternoonKip) }
-    var night by remember { mutableStateOf(day.nightKip) }
-    var morningMembers by remember { mutableStateOf(day.morningMembers) }
-    var afternoonMembers by remember { mutableStateOf(day.afternoonMembers) }
-    var nightMembers by remember { mutableStateOf(day.nightMembers) }
+    fun defaultMembersFor(kip: String): String =
+        settings.kipMembers[kip.trim().uppercase()].orEmpty()
+
+    var morning by remember(day) { mutableStateOf(day.morningKip) }
+    var afternoon by remember(day) { mutableStateOf(day.afternoonKip) }
+    var night by remember(day) { mutableStateOf(day.nightKip) }
+    var morningMembers by remember(day, settings.kipMembers) {
+        mutableStateOf(day.morningMembers.ifBlank { defaultMembersFor(day.morningKip) })
+    }
+    var afternoonMembers by remember(day, settings.kipMembers) {
+        mutableStateOf(day.afternoonMembers.ifBlank { defaultMembersFor(day.afternoonKip) })
+    }
+    var nightMembers by remember(day, settings.kipMembers) {
+        mutableStateOf(day.nightMembers.ifBlank { defaultMembersFor(day.nightKip) })
+    }
 
     BouncyGlassDialog(onDismissRequest = onDismiss) {
         val p = LocalGlassPalette.current
@@ -1215,15 +1238,35 @@ private fun EditDayDialog(
                 .verticalScroll(editScroll),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Sửa ca & người trực (${day.date})", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text(
-                text = "Để trống ô tên người trực nếu muốn dùng danh sách mặc định của Kíp.",
-                color = p.mutedText,
-                fontSize = 12.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Sửa ca & người trực (${day.date})",
+                    color = p.softWhite,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                InfoHintButton(
+                    title = "Sửa ca & người trực",
+                    message = "Danh sách nhân sự cố định của từng Kíp đã được điền sẵn vào từng ca. Chạm trực tiếp vào ô tên để chỉnh sửa riêng cho ngày này; khi đổi mã Kíp (A/B/C/D/E), ô nhân sự bên dưới sẽ tự động cập nhật theo Kíp mới.",
+                    onShowInfo = onShowInfo
+                )
+            }
             OutlinedTextField(
                 value = morning,
-                onValueChange = { morning = it.uppercase().take(3) },
+                onValueChange = { raw ->
+                    val newKip = raw.uppercase().take(3)
+                    morning = newKip
+                    val normalized = newKip.trim()
+                    if (normalized in settings.kipMembers) {
+                        morningMembers = defaultMembersFor(normalized)
+                    }
+                },
                 label = { Text("Kíp Ca Sáng (A/B/C/D/E)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -1231,13 +1274,20 @@ private fun EditDayDialog(
             OutlinedTextField(
                 value = morningMembers,
                 onValueChange = { morningMembers = it },
-                label = { Text("Người đi Ca Sáng (tùy chọn)") },
+                label = { Text("Người đi Ca Sáng") },
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = afternoon,
-                onValueChange = { afternoon = it.uppercase().take(3) },
+                onValueChange = { raw ->
+                    val newKip = raw.uppercase().take(3)
+                    afternoon = newKip
+                    val normalized = newKip.trim()
+                    if (normalized in settings.kipMembers) {
+                        afternoonMembers = defaultMembersFor(normalized)
+                    }
+                },
                 label = { Text("Kíp Ca Chiều (A/B/C/D/E)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -1245,13 +1295,20 @@ private fun EditDayDialog(
             OutlinedTextField(
                 value = afternoonMembers,
                 onValueChange = { afternoonMembers = it },
-                label = { Text("Người đi Ca Chiều (tùy chọn)") },
+                label = { Text("Người đi Ca Chiều") },
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = night,
-                onValueChange = { night = it.uppercase().take(3) },
+                onValueChange = { raw ->
+                    val newKip = raw.uppercase().take(3)
+                    night = newKip
+                    val normalized = newKip.trim()
+                    if (normalized in settings.kipMembers) {
+                        nightMembers = defaultMembersFor(normalized)
+                    }
+                },
                 label = { Text("Kíp Ca Khuya (A/B/C/D/E)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
@@ -1259,21 +1316,27 @@ private fun EditDayDialog(
             OutlinedTextField(
                 value = nightMembers,
                 onValueChange = { nightMembers = it },
-                label = { Text("Người đi Ca Khuya (tùy chọn)") },
+                label = { Text("Người đi Ca Khuya") },
                 maxLines = 2,
                 modifier = Modifier.fillMaxWidth()
             )
             DialogActionBar(
                 primaryLabel = "Lưu",
                 onPrimary = {
+                    val mKip = morning.trim()
+                    val aKip = afternoon.trim()
+                    val nKip = night.trim()
+                    val mMem = morningMembers.trim()
+                    val aMem = afternoonMembers.trim()
+                    val nMem = nightMembers.trim()
                     onSave(
                         day.copy(
-                            morningKip = morning.trim(),
-                            afternoonKip = afternoon.trim(),
-                            nightKip = night.trim(),
-                            morningMembers = morningMembers.trim(),
-                            afternoonMembers = afternoonMembers.trim(),
-                            nightMembers = nightMembers.trim()
+                            morningKip = mKip,
+                            afternoonKip = aKip,
+                            nightKip = nKip,
+                            morningMembers = if (mMem == defaultMembersFor(mKip).trim()) "" else mMem,
+                            afternoonMembers = if (aMem == defaultMembersFor(aKip).trim()) "" else aMem,
+                            nightMembers = if (nMem == defaultMembersFor(nKip).trim()) "" else nMem
                         )
                     )
                 },
@@ -2243,13 +2306,25 @@ private fun SettingsTab(
     if (showWatchPopup) {
         BouncyGlassDialog(onDismissRequest = { showWatchPopup = false }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Huawei Watch GT 6 Pro", color = p.softWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Hệ thống rung nhịp thông báo liên tục 1 giờ (mỗi 2,2 giây/nhịp) sang đồng hồ khi đến giờ trực.",
-                    color = p.mutedText,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Huawei Watch GT 6 Pro",
+                        color = p.softWhite,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    InfoHintButton(
+                        title = "Rung nhịp Huawei Watch GT 6 Pro",
+                        message = "Hệ thống rung nhịp thông báo liên tục 1 giờ (mỗi 2,2 giây/nhịp) sang đồng hồ khi đến giờ trực.",
+                        onShowInfo = onShowInfo
+                    )
+                }
                 DialogActionBar(
                     primaryLabel = "Thử rung đồng hồ",
                     onPrimary = {
