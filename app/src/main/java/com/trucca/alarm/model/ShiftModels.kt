@@ -74,6 +74,8 @@ data class ShiftTimeConfig(
 
 data class AppSettings(
     val selectedKip: String = "A",
+    val monthlyKipMap: Map<String, String> = emptyMap(),
+    val monthlyKipMembers: Map<String, Map<String, String>> = emptyMap(),
     val themeId: String = GlassThemeId.OCEAN.name,
     val autoRandomThemeEnabled: Boolean = false,
     val alarmEnabled: Boolean = true,
@@ -93,6 +95,35 @@ data class AppSettings(
         "E" to "Hoàng Thanh Hòa, Phạm Thành Vinh, Phạm Thị Thủy"
     )
 ) {
+    fun monthKey(ym: YearMonth): String = "%04d-%02d".format(ym.year, ym.monthValue)
+
+    fun effectiveKipForMonth(ym: YearMonth): String {
+        val configured = monthlyKipMap[monthKey(ym)]?.trim()?.uppercase()
+        return if (!configured.isNullOrBlank()) configured else selectedKip
+    }
+
+    fun effectiveKipMembersForMonth(ym: YearMonth): Map<String, String> {
+        val monthOverride = monthlyKipMembers[monthKey(ym)].orEmpty()
+        if (monthOverride.isEmpty()) return kipMembers
+        val merged = kipMembers.toMutableMap()
+        monthOverride.forEach { (kip, members) ->
+            if (members.isNotBlank()) merged[kip.uppercase()] = members
+        }
+        return merged
+    }
+
+    fun withKipForMonth(ym: YearMonth, kip: String): AppSettings {
+        val normalizedKip = kip.trim().uppercase()
+        val updatedMap = monthlyKipMap.toMutableMap().apply {
+            put(monthKey(ym), normalizedKip)
+        }
+        val isCurrentMonth = ym == YearMonth.now()
+        return copy(
+            selectedKip = if (isCurrentMonth) normalizedKip else selectedKip,
+            monthlyKipMap = updatedMap
+        )
+    }
+
     fun alarmLeadMinutes(type: ShiftType): Int = when (type) {
         ShiftType.MORNING -> morningAlarmBeforeMin
         ShiftType.AFTERNOON -> afternoonAlarmBeforeMin
