@@ -9,6 +9,7 @@ import com.trucca.alarm.MainActivity
 import com.trucca.alarm.data.ScheduleRepository
 import com.trucca.alarm.model.LunarCalendarUtil
 import java.time.LocalDateTime
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -25,7 +26,8 @@ object ShiftAlarmScheduler {
         if (!settings.alarmEnabled) return 0
 
         val now = LocalDateTime.now()
-        val upcoming = repo.getUpcomingShiftsForKip(settings.selectedKip, now, MAX_SCHEDULED_ALARMS)
+        val activeKip = settings.effectiveKipForMonth(YearMonth.from(now))
+        val upcoming = repo.getUpcomingShiftsForKip(activeKip, now, MAX_SCHEDULED_ALARMS)
         var scheduledCount = 0
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -60,13 +62,15 @@ object ShiftAlarmScheduler {
     fun scheduleTestAlarm(context: Context, delaySeconds: Long = 5) {
         val repo = ScheduleRepository(context)
         val settings = repo.getSettings()
-        val nextShift = repo.getUpcomingShiftsForKip(settings.selectedKip, LocalDateTime.now(), 1).firstOrNull()
+        val now = LocalDateTime.now()
+        val activeKip = settings.effectiveKipForMonth(YearMonth.from(now))
+        val nextShift = repo.getUpcomingShiftsForKip(activeKip, now, 1).firstOrNull()
         val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
 
         val shiftTitle = if (nextShift != null) {
-            "${nextShift.shiftType.displayName} • Kíp ${settings.selectedKip}"
+            "${nextShift.shiftType.displayName} • Kíp $activeKip"
         } else {
-            "Ca Sáng • Kíp ${settings.selectedKip}"
+            "Ca Sáng • Kíp $activeKip"
         }
 
         val detail = if (nextShift != null) {
