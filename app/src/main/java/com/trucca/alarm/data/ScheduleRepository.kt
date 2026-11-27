@@ -38,8 +38,56 @@ class ScheduleRepository(context: Context) {
     }
 
     fun saveSettings(settings: AppSettings) {
-        cachedSettings = settings
-        prefs.edit().putString(KEY_SETTINGS, gson.toJson(settings)).apply()
+        val currentMonthKey = settings.monthKey(YearMonth.now())
+        val syncedMonthlyKips = settings.monthlyKipMap.toMutableMap().apply {
+            if (!containsKey(currentMonthKey)) {
+                put(currentMonthKey, settings.selectedKip)
+            }
+        }
+        val normalized = settings.copy(
+            selectedKip = syncedMonthlyKips[currentMonthKey] ?: settings.selectedKip,
+            monthlyKipMap = syncedMonthlyKips
+        )
+        cachedSettings = normalized
+        prefs.edit().putString(KEY_SETTINGS, gson.toJson(normalized)).apply()
+    }
+
+    fun setKipForMonth(yearMonth: YearMonth, kip: String) {
+        val current = getSettings()
+        saveSettings(current.withKipForMonth(yearMonth, kip))
+    }
+
+    fun upsertMonthlyKipMembers(yearMonth: YearMonth, importedMembers: Map<String, String>) {
+        if (importedMembers.isEmpty()) return
+        val current = getSettings()
+        val key = current.monthKey(yearMonth)
+        val existingMonthMap = current.monthlyKipMembers[key].orEmpty().toMutableMap()
+        val globalMembersMap = current.kipMembers.toMutableMap()
+
+        importedMembers.forEach { (rawKip, members) ->
+            val kip = rawKip.trim().uppercase()
+            val cleaned = members.trim()
+            if (kip.isNotBlank() && cleaned.isNotBlank()) {
+                existingMonthMap[kip] = cleaned
+                if (yearMonth == YearMonth.now()) {
+                    globalMembersMap[kip] = cleaned
+                }
+            }
+        }
+
+        val updatedMonthlyMembers = current.monthlyKipMembers.toMutableMap().apply {
+            put(key, existingMonthMap)
+        }
+        saveSettings(
+            current.copy(
+                kipMembers = globalMembersMap,
+                monthlyKipMembers = updatedMonthlyMembers
+            )
+        )
+    }
+
+    fun getKipMembersForDate(date: LocalDate, settings: AppSettings = getSettings()): Map<String, String> {
+        return settings.effectiveKipMembersForMonth(YearMonth.from(date))
     }
 
     fun getAllSchedules(): Map<String, DaySchedule> {
@@ -203,6 +251,7 @@ class ScheduleRepository(context: Context) {
 
         for (d in candidateDates) {
             val daySchedule = schedules[d.toString()] ?: continue
+            val monthMembers = settings.effectiveKipMembersForMonth(YearMonth.from(d))
             for (type in ShiftType.entries) {
                 val (start, end) = computeShiftWindow(d, type, settings)
                 if (!now.isBefore(start) && now.isBefore(end)) {
@@ -210,7 +259,7 @@ class ScheduleRepository(context: Context) {
                     val remaining = Duration.between(now, end).seconds.coerceAtLeast(0)
                     val total = Duration.between(start, end).seconds.coerceAtLeast(1)
                     val members = daySchedule.customMembersFor(type)
-                        .ifBlank { settings.kipMembers[kip].orEmpty() }
+                        .ifBlank { monthMembers[kip].orEmpty() }
                     return ActiveShiftInfo(
                         shiftDate = d,
                         shiftType = type,
@@ -240,8 +289,10 @@ class ScheduleRepository(context: Context) {
         for ((dateStr, daySchedule) in schedules) {
             if (dateStr < minDateStr) continue
             val d = try { LocalDate.parse(dateStr) } catch (_: Exception) { continue }
+            val monthKip = settings.effectiveKipForMonth(YearMonth.from(d))
+            val targetKip = if (monthKip.isNotBlank()) monthKip else kip
             for (type in ShiftType.entries) {
-                if (daySchedule.kipFor(type).equals(kip, ignoreCase = true)) {
+                if (daySchedule.kipFor(type).equals(targetKip, ignoreCase = true)) {
                     val (start, end) = computeShiftWindow(d, type, settings)
                     if (start.isAfter(from)) {
                         val leadMin = settings.alarmLeadMinutes(type).toLong()
@@ -251,7 +302,7 @@ class ScheduleRepository(context: Context) {
                             UpcomingShiftInfo(
                                 shiftDate = d,
                                 shiftType = type,
-                                kip = kip,
+                                kip = targetKip,
                                 startDateTime = start,
                                 endDateTime = end,
                                 secondsUntilStart = secondsUntil,
