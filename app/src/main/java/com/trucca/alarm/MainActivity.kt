@@ -37,6 +37,7 @@ import com.trucca.alarm.parser.OfficeScheduleParser
 import com.trucca.alarm.ui.MainScreen
 import com.trucca.alarm.ui.theme.TrucCaTheme
 import com.trucca.alarm.widget.ShiftWidgetProvider
+import java.time.YearMonth
 
 class MainActivity : ComponentActivity() {
 
@@ -105,15 +106,17 @@ class MainActivity : ComponentActivity() {
                     onClearStatus = { statusMessage = null },
                     onSettingsChanged = { updated ->
                         val onlyThemeChanged = updated.copy(themeId = appSettings.themeId, autoRandomThemeEnabled = appSettings.autoRandomThemeEnabled) == appSettings
-                        appSettings = updated
                         repo.saveSettings(updated)
+                        val persisted = repo.getSettings()
+                        appSettings = persisted
                         if (!onlyThemeChanged) {
                             val count = ShiftAlarmScheduler.rescheduleAll(this)
                             ShiftWidgetProvider.updateAllWidgets(this)
-                            statusMessage = if (updated.alarmEnabled) {
-                                "Đã lưu cài đặt Kíp ${updated.selectedKip} và lên lịch $count báo thức sắp tới."
+                            val activeKipNow = persisted.effectiveKipForMonth(YearMonth.now())
+                            statusMessage = if (persisted.alarmEnabled) {
+                                "Đã lưu cài đặt Kíp $activeKipNow và lên lịch $count báo thức sắp tới."
                             } else {
-                                "Đã lưu cài đặt Kíp ${updated.selectedKip} (báo thức đang tắt)."
+                                "Đã lưu cài đặt Kíp $activeKipNow (báo thức đang tắt)."
                             }
                         }
                     },
@@ -146,8 +149,8 @@ class MainActivity : ComponentActivity() {
                         statusMessage = "Chuông báo thức thử nghiệm sẽ kêu sau 5 giây (kèm gửi thông báo sang đồng hồ nếu đã bật)."
                     },
                     onTestWatchNotification = {
-                        val kip = appSettings.selectedKip
-                        val members = appSettings.kipMembers[kip].orEmpty()
+                        val kip = appSettings.effectiveKipForMonth(YearMonth.now())
+                        val members = appSettings.effectiveKipMembersForMonth(YearMonth.now())[kip].orEmpty()
                         WatchNotifier.sendTestWatchNotification(this, kip, members)
                         statusMessage = "Đã gửi thông báo thử (kèm tên thành viên Kíp $kip) sang Huawei Watch GT 6 Pro."
                     }
@@ -189,8 +192,14 @@ class MainActivity : ComponentActivity() {
             targetYear = pendingYear,
             targetMonth = pendingMonth
         )
-        if (result.schedules.isNotEmpty()) {
-            repo.upsertSchedules(result.schedules)
+        if (result.schedules.isNotEmpty() || result.kipMembers.isNotEmpty()) {
+            if (result.kipMembers.isNotEmpty()) {
+                repo.upsertMonthlyKipMembers(YearMonth.of(pendingYear, pendingMonth), result.kipMembers)
+                appSettings = repo.getSettings()
+            }
+            if (result.schedules.isNotEmpty()) {
+                repo.upsertSchedules(result.schedules)
+            }
             val count = ShiftAlarmScheduler.rescheduleAll(this)
             ShiftWidgetProvider.updateAllWidgets(this)
             statusMessage = "${result.summary} Đã tự động lên lịch $count báo thức."
@@ -210,6 +219,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 var bestSchedules = emptyList<com.trucca.alarm.model.DaySchedule>()
+                var bestMembers = emptyMap<String, String>()
                 var matchedPage = -1
 
                 pfd.use { descriptor ->
@@ -232,11 +242,14 @@ class MainActivity : ComponentActivity() {
                                     targetYear = pendingYear,
                                     targetMonth = pendingMonth
                                 )
+                                if (parsed.kipMembers.size > bestMembers.size) {
+                                    bestMembers = parsed.kipMembers
+                                }
                                 if (parsed.schedules.size > bestSchedules.size) {
                                     bestSchedules = parsed.schedules
                                     matchedPage = pageIndex + 1
                                 }
-                                if (bestSchedules.size >= 25) break
+                                if (bestSchedules.size >= 25 && bestMembers.size >= 3) break
                             } finally {
                                 bitmap.recycle()
                             }
@@ -245,11 +258,18 @@ class MainActivity : ComponentActivity() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    if (bestSchedules.isNotEmpty()) {
-                        repo.upsertSchedules(bestSchedules)
+                    if (bestSchedules.isNotEmpty() || bestMembers.isNotEmpty()) {
+                        if (bestMembers.isNotEmpty()) {
+                            repo.upsertMonthlyKipMembers(YearMonth.of(pendingYear, pendingMonth), bestMembers)
+                            appSettings = repo.getSettings()
+                        }
+                        if (bestSchedules.isNotEmpty()) {
+                            repo.upsertSchedules(bestSchedules)
+                        }
                         val count = ShiftAlarmScheduler.rescheduleAll(this@MainActivity)
                         ShiftWidgetProvider.updateAllWidgets(this@MainActivity)
-                        statusMessage = "Đã đọc được ${bestSchedules.size} ngày trực từ trang $matchedPage file PDF cho tháng %02d/%04d và đồng bộ $count báo thức.".format(pendingMonth, pendingYear)
+                        val crewNote = if (bestMembers.isNotEmpty()) " (kèm nhân sự ${bestMembers.size} kíp)" else ""
+                        statusMessage = "Đã đọc được ${bestSchedules.size} ngày trực từ trang $matchedPage file PDF cho tháng %02d/%04d$crewNote và đồng bộ $count báo thức.".format(pendingMonth, pendingYear)
                     } else {
                         statusMessage = "Không tách được bảng 3 hàng Sáng/Chiều/Đêm trong file PDF này. Bạn có thể thử nhập bằng file Excel (.xlsx) hoặc nút Tạo nhanh theo chu kỳ 10 ngày."
                     }
@@ -273,8 +293,14 @@ class MainActivity : ComponentActivity() {
                         targetYear = pendingYear,
                         targetMonth = pendingMonth
                     )
-                    if (result.schedules.isNotEmpty()) {
-                        repo.upsertSchedules(result.schedules)
+                    if (result.schedules.isNotEmpty() || result.kipMembers.isNotEmpty()) {
+                        if (result.kipMembers.isNotEmpty()) {
+                            repo.upsertMonthlyKipMembers(YearMonth.of(pendingYear, pendingMonth), result.kipMembers)
+                            appSettings = repo.getSettings()
+                        }
+                        if (result.schedules.isNotEmpty()) {
+                            repo.upsertSchedules(result.schedules)
+                        }
                         val count = ShiftAlarmScheduler.rescheduleAll(this)
                         ShiftWidgetProvider.updateAllWidgets(this)
                         statusMessage = "${result.summary} Hãy mở tab Lịch tháng để rà soát lại. Đã đặt $count báo thức."
