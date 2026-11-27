@@ -26,6 +26,7 @@ class AlarmService : Service() {
 
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_DETAIL = "extra_detail"
+        const val EXTRA_NOTIF_ID = "extra_notif_id"
 
         private const val CHANNEL_ID = "trucca_huawei_watch_msg_v4"
         private const val FG_ID = 7701
@@ -95,7 +96,13 @@ class AlarmService : Service() {
                 startSession()
             }
             ACTION_SNOOZE_1MIN -> snooze1Min()
-            ACTION_CANCEL_1H -> stopAll()
+            ACTION_CANCEL_1H -> {
+                val extraNotifId = intent.getIntExtra(EXTRA_NOTIF_ID, -1)
+                if (extraNotifId > 0) {
+                    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(extraNotifId)
+                }
+                stopAll()
+            }
         }
         return START_NOT_STICKY
     }
@@ -155,14 +162,27 @@ class AlarmService : Service() {
         stopSelf()
     }
 
+    private fun buildPopupIntent(): Intent = Intent(this, WakePopupActivity::class.java).apply {
+        addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+        )
+        putExtra(EXTRA_TITLE, shiftTitle)
+        putExtra(EXTRA_DETAIL, shiftDetail)
+    }
+
+    private fun createOpenPopupPendingIntent(requestCode: Int): PendingIntent =
+        PendingIntent.getActivity(
+            this,
+            requestCode,
+            buildPopupIntent(),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
     private fun openPopup() {
-        val i = Intent(this, WakePopupActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_TITLE, shiftTitle)
-            putExtra(EXTRA_DETAIL, shiftDetail)
-        }
         try {
-            startActivity(i)
+            startActivity(buildPopupIntent())
         } catch (_: Exception) {
         }
     }
@@ -190,10 +210,11 @@ class AlarmService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(PULSE_ID)
 
-        val snoozePi = PendingIntent.getService(
+        val openPopupPi = createOpenPopupPendingIntent(7000 + (n % 100))
+        val cancelPi = PendingIntent.getService(
             this,
             9000 + n,
-            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
+            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -202,12 +223,13 @@ class AlarmService : Service() {
             .setLargeIcon(WatchNotifier.loadAppAvatarBitmap(this))
             .setContentTitle(shiftTitle)
             .setContentText("$shiftDetail • [Nhịp #$n]")
+            .setContentIntent(openPopupPi)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOnlyAlertOnce(false)
-            .addAction(0, "Hủy báo thức", snoozePi)
+            .addAction(0, "Hủy báo thức", cancelPi)
             .build()
 
         nm.notify(PULSE_ID, notif)
@@ -218,10 +240,11 @@ class AlarmService : Service() {
     }
 
     private fun buildFgNotif(text: String) = run {
-        val snoozePi = PendingIntent.getService(
+        val openPopupPi = createOpenPopupPendingIntent(7700)
+        val cancelPi = PendingIntent.getService(
             this,
             999,
-            Intent(this, AlarmService::class.java).apply { action = ACTION_SNOOZE_1MIN },
+            Intent(this, AlarmService::class.java).apply { action = ACTION_CANCEL_1H },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         NotificationCompat.Builder(this, CHANNEL_ID)
@@ -229,11 +252,12 @@ class AlarmService : Service() {
             .setLargeIcon(WatchNotifier.loadAppAvatarBitmap(this))
             .setContentTitle(shiftTitle)
             .setContentText(text)
+            .setContentIntent(openPopupPi)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(0, "Hủy báo thức", snoozePi)
+            .addAction(0, "Hủy báo thức", cancelPi)
             .build()
     }
 
