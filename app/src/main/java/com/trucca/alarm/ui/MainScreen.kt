@@ -136,11 +136,15 @@ fun MainScreen(
         }
     }
 
+    val currentMonthKip = remember(now, settings) {
+        settings.effectiveKipForMonth(YearMonth.from(now))
+    }
+
     val activeShift = remember(now, settings, schedulesVersion) {
         repo.getCurrentActiveShift(now)
     }
-    val upcomingMyShifts = remember(now, settings, schedulesVersion) {
-        repo.getUpcomingShiftsForKip(settings.selectedKip, now, 10)
+    val upcomingMyShifts = remember(now, settings, currentMonthKip, schedulesVersion) {
+        repo.getUpcomingShiftsForKip(currentMonthKip, now, 10)
     }
 
     LiquidGlassBackdrop {
@@ -158,6 +162,7 @@ fun MainScreen(
                     0 -> HomeTab(
                         now = now,
                         settings = settings,
+                        effectiveKip = currentMonthKip,
                         activeShift = activeShift,
                         upcomingMyShifts = upcomingMyShifts,
                         weather = weatherInfo,
@@ -167,7 +172,7 @@ fun MainScreen(
                             }
                         },
                         onSelectKip = { kip ->
-                            onSettingsChanged(settings.copy(selectedKip = kip))
+                            onSettingsChanged(settings.withKipForMonth(YearMonth.from(now), kip))
                         }
                     )
                     1 -> CalendarTab(
@@ -176,6 +181,9 @@ fun MainScreen(
                         schedulesVersion = schedulesVersion,
                         isSelectedTab = pagerState.currentPage == 1,
                         onShowInfo = showInfo,
+                        onMonthKipChanged = { ym, kip ->
+                            onSettingsChanged(settings.withKipForMonth(ym, kip))
+                        },
                         onDayEdited = { day ->
                             repo.saveDayExact(day)
                             schedulesVersion++
@@ -445,6 +453,7 @@ private fun GlassNavItem(
 private fun HomeTab(
     now: LocalDateTime,
     settings: AppSettings,
+    effectiveKip: String,
     activeShift: ActiveShiftInfo?,
     upcomingMyShifts: List<UpcomingShiftInfo>,
     weather: WeatherInfo?,
@@ -525,7 +534,7 @@ private fun HomeTab(
                             .padding(horizontal = 13.dp, vertical = 7.dp)
                     ) {
                         Text(
-                            text = if (kipExpanded) "Chọn Kíp ▴" else "Kíp tôi: ${settings.selectedKip} ▾",
+                            text = if (kipExpanded) "Chọn Kíp ▴" else "Kíp tôi: $effectiveKip ▾",
                             color = p.highlightYellow,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -546,7 +555,7 @@ private fun HomeTab(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             DefaultScheduleData.ALL_KIPS.forEach { kip ->
-                                val isSelected = kip == settings.selectedKip
+                                val isSelected = kip == effectiveKip
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -584,6 +593,7 @@ private fun HomeTab(
         item {
             ActiveShiftHeroCard(
                 activeShift = activeShift,
+                effectiveKip = effectiveKip,
                 settings = settings,
                 weather = weather,
                 onRefreshWeather = onRefreshWeather
@@ -593,6 +603,7 @@ private fun HomeTab(
         item {
             MyShiftCountdownCard(
                 settings = settings,
+                effectiveKip = effectiveKip,
                 activeShift = activeShift,
                 nextShift = upcomingMyShifts.firstOrNull()
             )
@@ -600,7 +611,7 @@ private fun HomeTab(
 
         item {
             Text(
-                text = "Các ca sắp tới của Kíp ${settings.selectedKip}",
+                text = "Các ca sắp tới của Kíp $effectiveKip",
                 color = p.softWhite,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold
@@ -611,7 +622,7 @@ private fun HomeTab(
             item {
                 GlassPanel(modifier = Modifier.fillMaxWidth(), cornerRadius = 18.dp) {
                     Text(
-                        text = "Chưa có lịch trực sắp tới cho Kíp ${settings.selectedKip}. Hãy sang mục Nhập lịch để nạp file Excel/Word/Ảnh hoặc tạo chu kỳ tháng mới.",
+                        text = "Chưa có lịch trực sắp tới cho Kíp $effectiveKip. Hãy sang mục Nhập lịch để nạp file Excel/Word/Ảnh hoặc tạo chu kỳ tháng mới.",
                         color = p.mutedText,
                         modifier = Modifier.padding(16.dp),
                         fontSize = 14.sp
@@ -629,6 +640,7 @@ private fun HomeTab(
 @Composable
 private fun ActiveShiftHeroCard(
     activeShift: ActiveShiftInfo?,
+    effectiveKip: String,
     settings: AppSettings,
     weather: WeatherInfo?,
     onRefreshWeather: () -> Unit
@@ -662,7 +674,7 @@ private fun ActiveShiftHeroCard(
             val range = settings.shiftTimeConfig.formattedRange(activeShift.shiftType)
             val remainingText = ScheduleRepository.formatCountdown(activeShift.remainingSeconds)
             val progress = 1f - (activeShift.remainingSeconds.toFloat() / activeShift.totalSeconds.toFloat())
-            val isMyKip = activeShift.kip.equals(settings.selectedKip, ignoreCase = true)
+            val isMyKip = activeShift.kip.equals(effectiveKip, ignoreCase = true)
 
             Column {
                 Row(
@@ -781,11 +793,12 @@ private fun ActiveShiftHeroCard(
 @Composable
 private fun MyShiftCountdownCard(
     settings: AppSettings,
+    effectiveKip: String,
     activeShift: ActiveShiftInfo?,
     nextShift: UpcomingShiftInfo?
 ) {
     val p = LocalGlassPalette.current
-    val isCurrentlyWorking = activeShift?.kip.equals(settings.selectedKip, ignoreCase = true)
+    val isCurrentlyWorking = activeShift?.kip.equals(effectiveKip, ignoreCase = true)
     val dateFmt = DateTimeFormatter.ofPattern("dd/MM")
     val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -811,9 +824,9 @@ private fun MyShiftCountdownCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (isCurrentlyWorking) {
-                        "Kíp ${settings.selectedKip} của bạn đang trong ca"
+                        "Kíp $effectiveKip của bạn đang trong ca"
                     } else {
-                        "Đếm ngược tới ca kế tiếp của Kíp ${settings.selectedKip}"
+                        "Đếm ngược tới ca kế tiếp của Kíp $effectiveKip"
                     },
                     color = p.softWhite,
                     fontWeight = FontWeight.SemiBold,
@@ -911,6 +924,7 @@ private fun CalendarTab(
     schedulesVersion: Int,
     isSelectedTab: Boolean,
     onShowInfo: (String, String) -> Unit,
+    onMonthKipChanged: (YearMonth, String) -> Unit,
     onDayEdited: (DaySchedule) -> Unit,
     onSwapApplied: (List<DaySchedule>) -> Unit,
     onUndoLastSwap: () -> Unit,
@@ -919,13 +933,19 @@ private fun CalendarTab(
     val p = LocalGlassPalette.current
     val today = LocalDate.now()
     var currentMonth by remember { mutableStateOf(YearMonth.from(today)) }
+    val monthKip = remember(currentMonth, settings) {
+        settings.effectiveKipForMonth(currentMonth)
+    }
+    val monthMembersMap = remember(currentMonth, settings) {
+        settings.effectiveKipMembersForMonth(currentMonth)
+    }
     val listState = rememberLazyListState()
     val allSchedules = remember(schedulesVersion) { repo.getAllSchedules() }
     val monthSchedules = remember(currentMonth, schedulesVersion) {
         repo.getSchedulesForMonth(currentMonth).associateBy { it.date }
     }
-    val kipConflicts = remember(allSchedules, settings.selectedKip) {
-        ShiftSwapEngine.findConflictsForKip(allSchedules, settings.selectedKip)
+    val kipConflicts = remember(allSchedules, monthKip) {
+        ShiftSwapEngine.findConflictsForKip(allSchedules, monthKip)
     }
     val conflictCells = remember(kipConflicts) {
         ShiftSwapEngine.conflictCellKeys(kipConflicts)
@@ -984,9 +1004,47 @@ private fun CalendarTab(
                 }
                 InfoHintButton(
                     title = "Hướng dẫn Lịch tháng & Đổi ca",
-                    message = "Ô nổi bật là Kíp ${settings.selectedKip}. Ô viền đỏ là ca vi phạm luật nghỉ tối thiểu 12 giờ (2 ca). Bấm 'Đổi ca' để tìm đổi vòng 2–4 kíp trong ±30 ngày hoặc dạy app mẫu đổi mới.",
+                    message = "Ô nổi bật là Kíp $monthKip của tháng %02d/%04d. Chạm Kíp ở thanh dưới để đặt trước Kíp cho tháng này (khi sang tháng mới tự áp dụng). Ô viền đỏ là ca vi phạm luật nghỉ tối thiểu 12 giờ (2 ca).".format(currentMonth.monthValue, currentMonth.year),
                     onShowInfo = onShowInfo
                 )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Kíp %02d/%04d:".format(currentMonth.monthValue, currentMonth.year),
+                color = p.mutedText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            DefaultScheduleData.ALL_KIPS.forEach { kip ->
+                val active = kip == monthKip
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (active) p.highlightYellow else Color.White.copy(alpha = 0.08f))
+                        .border(
+                            1.dp,
+                            if (active) p.highlightYellow else Color.White.copy(alpha = 0.16f),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { onMonthKipChanged(currentMonth, kip) }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = kip,
+                        color = if (active) Color(0xFF0F172A) else p.softWhite,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
@@ -1016,7 +1074,7 @@ private fun CalendarTab(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "⚠️ Cảnh báo phạm luật nghỉ 12h (tối thiểu 2 ca) — Kíp ${settings.selectedKip}:",
+                        text = "⚠️ Cảnh báo phạm luật nghỉ 12h (tối thiểu 2 ca) — Kíp $monthKip:",
                         color = Color(0xFFFCA5A5),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -1092,19 +1150,19 @@ private fun CalendarTab(
                             }
                             ShiftCellBadge(
                                 kip = sched.morningKip,
-                                isHighlighted = sched.morningKip == settings.selectedKip,
+                                isHighlighted = sched.morningKip == monthKip,
                                 isConflict = (date.toString() to ShiftType.MORNING) in conflictCells,
                                 modifier = Modifier.weight(1f)
                             )
                             ShiftCellBadge(
                                 kip = sched.afternoonKip,
-                                isHighlighted = sched.afternoonKip == settings.selectedKip,
+                                isHighlighted = sched.afternoonKip == monthKip,
                                 isConflict = (date.toString() to ShiftType.AFTERNOON) in conflictCells,
                                 modifier = Modifier.weight(1f)
                             )
                             ShiftCellBadge(
                                 kip = sched.nightKip,
-                                isHighlighted = sched.nightKip == settings.selectedKip,
+                                isHighlighted = sched.nightKip == monthKip,
                                 isConflict = (date.toString() to ShiftType.NIGHT) in conflictCells,
                                 modifier = Modifier.weight(1f)
                             )
@@ -1119,14 +1177,16 @@ private fun CalendarTab(
     }
 
     editingDay?.let { day ->
+        val dayDate = try { LocalDate.parse(day.date) } catch (_: Exception) { currentMonth.atDay(1) }
+        val daySettings = settings.copy(kipMembers = monthMembersMap, selectedKip = monthKip)
         EditDayDialog(
             day = day,
-            settings = settings,
+            settings = daySettings,
             onShowInfo = onShowInfo,
             onDismiss = { editingDay = null },
             onOpenSwap = {
                 editingDay = null
-                swapTargetDay = try { LocalDate.parse(day.date) } catch (_: Exception) { LocalDate.now() }
+                swapTargetDay = dayDate
                 showSwapDialog = true
             },
             onSave = { updated ->
@@ -1137,9 +1197,10 @@ private fun CalendarTab(
     }
 
     if (showSwapDialog) {
+        val swapSettings = settings.copy(kipMembers = monthMembersMap, selectedKip = monthKip)
         ShiftSwapDialog(
             repo = repo,
-            settings = settings,
+            settings = swapSettings,
             initialDate = swapTargetDay ?: LocalDate.now(),
             onDismiss = { showSwapDialog = false },
             onApplySwap = { updatedDays ->
@@ -1200,6 +1261,34 @@ private fun ShiftCellBadge(
 }
 
 @Composable
+private fun ShiftZoneCard(
+    zoneTitle: String,
+    zoneTint: Color,
+    borderTint: Color,
+    content: @Composable () -> Unit
+) {
+    val p = LocalGlassPalette.current
+    val zoneShape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(zoneShape)
+            .background(zoneTint.copy(alpha = 0.14f))
+            .border(1.2.dp, borderTint.copy(alpha = 0.72f), zoneShape)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = zoneTitle,
+            color = p.softWhite,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
+        content()
+    }
+}
+
+@Composable
 private fun EditDayDialog(
     day: DaySchedule,
     settings: AppSettings,
@@ -1236,7 +1325,7 @@ private fun EditDayDialog(
                     bottomFade = UNIFORM_EDGE_FADE
                 )
                 .verticalScroll(editScroll),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1253,73 +1342,95 @@ private fun EditDayDialog(
                 Spacer(modifier = Modifier.width(8.dp))
                 InfoHintButton(
                     title = "Sửa ca & người trực",
-                    message = "Danh sách nhân sự cố định của từng Kíp đã được điền sẵn vào từng ca. Chạm trực tiếp vào ô tên để chỉnh sửa riêng cho ngày này; khi đổi mã Kíp (A/B/C/D/E), ô nhân sự bên dưới sẽ tự động cập nhật theo Kíp mới.",
+                    message = "3 khu vực được tách biệt theo Ca Sáng, Ca Chiều và Ca Khuya. Danh sách nhân sự cố định của từng Kíp đã điền sẵn; chạm trực tiếp ô tên để sửa riêng hoặc đổi mã Kíp (A/B/C/D/E) để tự cập nhật.",
                     onShowInfo = onShowInfo
                 )
             }
-            OutlinedTextField(
-                value = morning,
-                onValueChange = { raw ->
-                    val newKip = raw.uppercase().take(3)
-                    morning = newKip
-                    val normalized = newKip.trim()
-                    if (normalized in settings.kipMembers) {
-                        morningMembers = defaultMembersFor(normalized)
-                    }
-                },
-                label = { Text("Kíp Ca Sáng (A/B/C/D/E)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = morningMembers,
-                onValueChange = { morningMembers = it },
-                label = { Text("Người đi Ca Sáng") },
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = afternoon,
-                onValueChange = { raw ->
-                    val newKip = raw.uppercase().take(3)
-                    afternoon = newKip
-                    val normalized = newKip.trim()
-                    if (normalized in settings.kipMembers) {
-                        afternoonMembers = defaultMembersFor(normalized)
-                    }
-                },
-                label = { Text("Kíp Ca Chiều (A/B/C/D/E)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = afternoonMembers,
-                onValueChange = { afternoonMembers = it },
-                label = { Text("Người đi Ca Chiều") },
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = night,
-                onValueChange = { raw ->
-                    val newKip = raw.uppercase().take(3)
-                    night = newKip
-                    val normalized = newKip.trim()
-                    if (normalized in settings.kipMembers) {
-                        nightMembers = defaultMembersFor(normalized)
-                    }
-                },
-                label = { Text("Kíp Ca Khuya (A/B/C/D/E)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = nightMembers,
-                onValueChange = { nightMembers = it },
-                label = { Text("Người đi Ca Khuya") },
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth()
-            )
+
+            ShiftZoneCard(
+                zoneTitle = "Khu vực Ca Sáng",
+                zoneTint = Color(0xFF10B981),
+                borderTint = Color(0xFF34D399)
+            ) {
+                OutlinedTextField(
+                    value = morning,
+                    onValueChange = { raw ->
+                        val newKip = raw.uppercase().take(3)
+                        morning = newKip
+                        val normalized = newKip.trim()
+                        if (normalized in settings.kipMembers) {
+                            morningMembers = defaultMembersFor(normalized)
+                        }
+                    },
+                    label = { Text("Kíp Ca Sáng (A/B/C/D/E)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = morningMembers,
+                    onValueChange = { morningMembers = it },
+                    label = { Text("Người đi Ca Sáng") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            ShiftZoneCard(
+                zoneTitle = "Khu vực Ca Chiều",
+                zoneTint = Color(0xFFF59E0B),
+                borderTint = Color(0xFFFBBF24)
+            ) {
+                OutlinedTextField(
+                    value = afternoon,
+                    onValueChange = { raw ->
+                        val newKip = raw.uppercase().take(3)
+                        afternoon = newKip
+                        val normalized = newKip.trim()
+                        if (normalized in settings.kipMembers) {
+                            afternoonMembers = defaultMembersFor(normalized)
+                        }
+                    },
+                    label = { Text("Kíp Ca Chiều (A/B/C/D/E)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = afternoonMembers,
+                    onValueChange = { afternoonMembers = it },
+                    label = { Text("Người đi Ca Chiều") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            ShiftZoneCard(
+                zoneTitle = "Khu vực Ca Khuya",
+                zoneTint = Color(0xFF6366F1),
+                borderTint = Color(0xFF818CF8)
+            ) {
+                OutlinedTextField(
+                    value = night,
+                    onValueChange = { raw ->
+                        val newKip = raw.uppercase().take(3)
+                        night = newKip
+                        val normalized = newKip.trim()
+                        if (normalized in settings.kipMembers) {
+                            nightMembers = defaultMembersFor(normalized)
+                        }
+                    },
+                    label = { Text("Kíp Ca Khuya (A/B/C/D/E)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = nightMembers,
+                    onValueChange = { nightMembers = it },
+                    label = { Text("Người đi Ca Khuya") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
             DialogActionBar(
                 primaryLabel = "Lưu",
                 onPrimary = {
@@ -1818,7 +1929,7 @@ private fun ImportTab(
                         Text("Nhập từ PDF, Excel hoặc Word", color = p.softWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         InfoHintButton(
                             title = "Nhập từ PDF / Excel / Word",
-                            message = "Tự động đọc bảng có các dòng Ngày, Sáng, Chiều, Đêm giống mẫu Phụ lục lịch trực cơ quan bạn.",
+                            message = "Tự động đọc bảng có các dòng Ngày, Sáng, Chiều, Đêm cùng bảng nhân sự các kíp đi kèm nếu có.",
                             onShowInfo = onShowInfo
                         )
                     }
