@@ -68,11 +68,28 @@ object WatchNotifier {
     ) {
         ensureChannel(context)
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val snoozeAlarmPi = stopPendingIntent ?: PendingIntent.getService(
+
+        val openPopupPi = PendingIntent.getActivity(
+            context,
+            notificationId + 3000,
+            Intent(context, WakePopupActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP
+                )
+                putExtra(AlarmService.EXTRA_TITLE, title)
+                putExtra(AlarmService.EXTRA_DETAIL, body)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val cancelAlarmPi = stopPendingIntent ?: PendingIntent.getService(
             context,
             notificationId + 5000,
             Intent(context, AlarmService::class.java).apply {
-                action = AlarmService.ACTION_SNOOZE_1MIN
+                action = AlarmService.ACTION_CANCEL_1H
+                putExtra(AlarmService.EXTRA_NOTIF_ID, notificationId)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -83,23 +100,26 @@ object WatchNotifier {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentIntent(openPopupPi)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(if (isCallAlert) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(false)
             .setOngoing(false)
             .setOnlyAlertOnce(false)
-            .addAction(0, "Hủy báo thức", snoozeAlarmPi)
+            .addAction(0, "Hủy báo thức", cancelAlarmPi)
 
         nm.notify(notificationId, builder.build())
     }
 
     fun sendTestWatchNotification(context: Context, selectedKip: String, members: String) {
-        val snoozePi = PendingIntent.getService(
+        val notifId = (System.currentTimeMillis() % 100000).toInt() + 8000
+        val cancelPi = PendingIntent.getService(
             context,
             9901,
             Intent(context, AlarmService::class.java).apply {
-                action = AlarmService.ACTION_SNOOZE_1MIN
+                action = AlarmService.ACTION_CANCEL_1H
+                putExtra(AlarmService.EXTRA_NOTIF_ID, notifId)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -107,8 +127,8 @@ object WatchNotifier {
             context = context,
             title = "Ca Sáng • Kíp $selectedKip",
             body = if (members.isNotBlank()) "07:00 – 15:00 • $members" else "07:00 – 15:00 • Thử rung đồng hồ",
-            notificationId = (System.currentTimeMillis() % 100000).toInt() + 8000,
-            stopPendingIntent = snoozePi,
+            notificationId = notifId,
+            stopPendingIntent = cancelPi,
             isCallAlert = false
         )
     }
